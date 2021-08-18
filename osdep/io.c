@@ -62,7 +62,18 @@ bool mp_set_cloexec(int fd)
     return true;
 }
 
-#ifndef _WIN32
+#if defined(__SWITCH__)
+int mp_make_cloexec_pipe(int pipes[2])
+{
+    pipes[0] = pipes[1] = -1;
+    return -1;
+}
+
+int mp_make_wakeup_pipe(int pipes[2])
+{
+    return mp_make_cloexec_pipe(pipes);
+}
+#elif !defined(_WIN32)
 int mp_make_cloexec_pipe(int pipes[2])
 {
     if (pipe(pipes) != 0) {
