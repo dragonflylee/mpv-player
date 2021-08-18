@@ -63,6 +63,13 @@ bool mp_set_cloexec(int fd)
 }
 
 #ifndef _WIN32
+#if defined(__SWITCH__)
+int mp_make_cloexec_pipe(int pipes[2])
+{
+    pipes[0] = pipes[1] = -1;
+    return -1;
+}
+#else
 int mp_make_cloexec_pipe(int pipes[2])
 {
     if (pipe(pipes) != 0) {
@@ -74,6 +81,7 @@ int mp_make_cloexec_pipe(int pipes[2])
         mp_set_cloexec(pipes[i]);
     return 0;
 }
+#endif
 
 // create a pipe, and set it to non-blocking (and also set FD_CLOEXEC)
 int mp_make_wakeup_pipe(int pipes[2])
