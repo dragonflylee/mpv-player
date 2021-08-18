@@ -53,7 +53,7 @@ struct spdifContext {
     struct mp_decoder public;
 };
 
-static int write_packet(void *p, uint8_t *buf, int buf_size)
+static int write_packet(void *p, const uint8_t *buf, int buf_size)
 {
     struct spdifContext *ctx = p;
 

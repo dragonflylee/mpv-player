@@ -21,6 +21,10 @@
 #include <math.h>
 #include <limits.h>
 
+#ifdef __SWITCH__
+#   include <switch.h>
+#endif
+
 #include <libavutil/common.h>
 #include <ass/ass.h>
 
@@ -197,6 +201,33 @@ static void enable_output(struct sd *sd, bool enable)
         ctx->ass_renderer = NULL;
     } else {
         ctx->ass_renderer = ass_renderer_init(ctx->ass_library);
+
+#ifdef __SWITCH__
+        static char * const pl_font_names[] = {
+            [PlSharedFontType_Standard]             = "nintendo_udsg-r_std_003",
+            [PlSharedFontType_ChineseSimplified]    = "nintendo_udsg-r_org_zh-cn_003",
+            [PlSharedFontType_ExtChineseSimplified] = "nintendo_udsg-r_ext_zh-cn_003",
+            [PlSharedFontType_ChineseTraditional]   = "nintendo_udjxh-db_zh-tw_003",
+            [PlSharedFontType_KO]                   = "nintendo_udsg-r_ko_003",
+            [PlSharedFontType_NintendoExt]          = "NintendoExt003",
+        };
+
+        Result rc = plInitialize(PlServiceType_User);
+        if (R_SUCCEEDED(rc)) {
+            PlFontData font;
+            for (int i = 0; i < PlSharedFontType_Total; ++i) {
+                rc = plGetSharedFontByType(&font, i);
+                if (R_SUCCEEDED(rc))
+                    ass_add_font(ctx->ass_library, pl_font_names[font.type],
+                        font.address, font.size);
+                else
+                    MP_ERR(sd, "Failed to add font %s from pl: %#x\n", pl_font_names[i], rc);
+            }
+
+            plExit();
+        }
+
+#endif
 
         mp_ass_configure_fonts(ctx->ass_renderer, sd->opts->sub_style,
                                sd->global, sd->log);

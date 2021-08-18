@@ -423,6 +423,10 @@ iconv support use --disable-iconv.",
         'name': 'zimg-st428',
         'desc': 'ZIMG support for ZIMG_TRANSFER_ST428',
         'func': check_pkg_config('zimg', '>= 3.0.5'),
+    }, {
+        'name': '--hos',
+        'desc': 'Horizon OS',
+        'func': check_statement(['switch.h'], ''),
     }
 ]
 
@@ -509,6 +513,11 @@ audio_output_features = [
         'desc': 'WASAPI audio output',
         'deps': 'os-win32 || os-cygwin',
         'func': check_cc(fragment=load_fragment('wasapi.c')),
+    }, {
+        'name': '--hos-audio',
+        'desc': 'Audren audio output',
+        'deps': 'hos',
+        'func': check_true,
     }
 ]
 
@@ -863,6 +872,14 @@ video_output_features = [
         'desc': "POSIX shared memory API",
         'deps': 'posix',
         'func': check_statement('sys/mman.h', 'shm_open("",0,0)')
+    }, {
+        'name': '--deko3d',
+        'desc': 'deko3d context support',
+        'deps': 'hos && gpl',
+        'func': compose_checks(
+                    check_cc(header_name='deko3d.h', lib='deko3d'),
+                    check_pkg_config('uam'),
+                ),
     }
 ]
 

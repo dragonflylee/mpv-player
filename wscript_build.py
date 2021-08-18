@@ -240,7 +240,6 @@ def build(ctx):
         ])
 
     getch2_c = ctx.pick_first_matching_dep([
-        ( "osdep/terminal-unix.c",               "posix" ),
         ( "osdep/terminal-win.c",                "win32-desktop" ),
         ( "osdep/terminal-dummy.c" ),
     ])
@@ -252,13 +251,11 @@ def build(ctx):
     ])
 
     ipc_c = ctx.pick_first_matching_dep([
-        ( "input/ipc-unix.c",                    "posix" ),
         ( "input/ipc-win.c",                     "win32-desktop" ),
         ( "input/ipc-dummy.c" ),
     ])
 
     subprocess_c = ctx.pick_first_matching_dep([
-        ( "osdep/subprocess-posix.c",            "posix" ),
         ( "osdep/subprocess-win.c",              "win32-desktop" ),
         ( "osdep/subprocess-dummy.c" ),
     ])
@@ -309,6 +306,7 @@ def build(ctx):
         ( "audio/out/ao_wasapi.c",               "wasapi" ),
         ( "audio/out/ao_wasapi_changenotify.c",  "wasapi" ),
         ( "audio/out/ao_wasapi_utils.c",         "wasapi" ),
+        ( "audio/out/ao_hos.c",                  "hos-audio" ),
         ( "audio/out/buffer.c" ),
 
         ## Core
@@ -542,6 +540,10 @@ def build(ctx):
         ( "video/out/present_sync.c",            "wayland || x11" ),
         ( "video/out/wldmabuf/context_wldmabuf.c", "dmabuf-wayland" ),
         ( "video/out/wldmabuf/ra_wldmabuf.c",      "dmabuf-wayland" ),
+        ( "video/out/deko3d/context.c",          "deko3d" ),
+        ( "video/out/deko3d/ra_dk.c",            "deko3d" ),
+        ( "video/out/deko3d/libmpv_dk.c",        "deko3d" ),
+        ( "video/out/hwdec/hwdec_deko3d.c",      "deko3d" ),
         ( "video/out/vo.c" ),
         ( "video/out/vo_caca.c",                 "caca" ),
         ( "video/out/vo_direct3d.c",             "direct3d" ),
@@ -621,10 +623,10 @@ def build(ctx):
         ( "osdep/semaphore_osx.c" ),
         ( "osdep/subprocess.c" ),
         ( subprocess_c ),
-        ( "osdep/w32_keyboard.c",                "os-cygwin" ),
+        ( "osdep/w32_keyboard.c",                "os-cygwin && !hos" ),
         ( "osdep/w32_keyboard.c",                "os-win32" ),
         ( "osdep/win32/pthread.c",               "win32-internal-pthreads"),
-        ( "osdep/windows_utils.c",               "os-cygwin" ),
+        ( "osdep/windows_utils.c",               "os-cygwin && !hos" ),
         ( "osdep/windows_utils.c",               "os-win32" ),
 
         ## tree_allocator
@@ -779,7 +781,7 @@ def build(ctx):
         )
 
         headers = ["client.h", "render.h",
-                   "render_gl.h", "stream_cb.h"]
+                   "render_gl.h", "stream_cb.h", "render_dk3d.h"]
         for f in headers:
             ctx.install_as(ctx.env.INCLUDEDIR + '/mpv/' + f, 'libmpv/' + f)
 

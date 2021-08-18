@@ -1095,10 +1095,20 @@ static int demux_open_lavf(demuxer_t *demuxer, enum demux_check check)
         MP_VERBOSE(demuxer, "...did read %d bytes.\n", r);
     }
 
-    if (avformat_open_input(&avfc, priv->filename, priv->avif, &dopts) < 0) {
+    bstr out = {0};
+    bstr fn = bstr0(priv->filename);
+    if (bstr_find0(fn, ":") > 0 && bstr_find0(fn, "://") < 0)
+        bstr_xappend(demuxer, &out, bstr0("file:"));
+
+    bstr_xappend(demuxer, &out, fn);
+
+    if (avformat_open_input(&avfc, out.start, priv->avif, &dopts) < 0) {
         MP_ERR(demuxer, "avformat_open_input() failed\n");
+        talloc_free(out.start);
         goto fail;
     }
+
+    talloc_free(out.start);
 
     mp_avdict_print_unset(demuxer->log, MSGL_V, dopts);
     av_dict_free(&dopts);

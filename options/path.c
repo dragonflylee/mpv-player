@@ -84,7 +84,7 @@ static const char *mp_get_platform_path(void *talloc_ctx,
         // force all others to NULL, only first returns the path
         for (int n = 0; n < MP_ARRAY_SIZE(config_dirs); n++) {
             if (strcmp(config_dirs[n], type) == 0)
-                return (n == 0 && global->configdir[0]) ? global->configdir : NULL;
+                return (n < 2 && global->configdir[0]) ? global->configdir : NULL;
         }
         for (int n = 0; n < MP_ARRAY_SIZE(config_dir_replaces); n++) {
             if (strcmp(config_dir_replaces[n], type) == 0)
@@ -283,6 +283,10 @@ char *mp_splitext(const char *path, bstr *root)
 
 bool mp_path_is_absolute(struct bstr path)
 {
+    // Switch extension: path with a mountpoint prefix are absolute
+    if (path.len && strchr((char *)path.start, ':'))
+        return true;
+
     if (path.len && strchr(mp_path_separators, path.start[0]))
         return true;
 
