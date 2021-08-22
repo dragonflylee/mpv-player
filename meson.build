@@ -294,7 +294,8 @@ endif
 
 darwin = host_machine.system() == 'darwin'
 win32 = host_machine.system() == 'cygwin' or host_machine.system() == 'windows'
-posix = not win32
+hos = host_machine.system() == 'horizon'
+posix = not (win32 or hos)
 
 features += {'darwin': darwin}
 features += {'posix': posix}
@@ -417,6 +418,17 @@ if darwin
     path_source = files('osdep/path-darwin.c')
     sources += path_source + files('osdep/timer-darwin.c')
 
+endif
+
+if hos
+    sources += files('osdep/path-unix.c',
+                     'osdep/timer-linux.c',
+                     'osdep/subprocess-dummy.c',
+                     'osdep/terminal-dummy.c',
+                     'osdep/main-fn-unix.c',
+                     'osdep/language-posix.c',
+                     'input/ipc-dummy.c',
+                     'sub/filter_regex.c')
 endif
 
 if posix and not darwin
@@ -720,6 +732,8 @@ if features['sdl2-gamepad']
     sources += files('input/sdl_gamepad.c')
 endif
 
+libnx = cc.find_library('nx', required: false)
+
 stdatomic_dep = cc.find_library('atomic', required: false)
 features += {'stdatomic': cc.has_header_symbol('stdatomic.h', 'atomic_int', dependencies: stdatomic_dep,
                                                required: get_option('stdatomic'))}
@@ -853,6 +867,12 @@ sdl2_audio = get_option('sdl2-audio').require(
 features += {'sdl2-audio': sdl2_audio.allowed()}
 if features['sdl2-audio']
     sources += files('audio/out/ao_sdl.c')
+endif
+
+features += {'hos-audio': hos and libnx.found()}
+if features['hos-audio']
+    sources += files('audio/out/ao_hos.c')
+    dependencies += libnx
 endif
 
 sndio = dependency('sndio', required: get_option('sndio'))
