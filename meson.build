@@ -301,7 +301,8 @@ endif
 
 darwin = host_machine.system() == 'darwin'
 win32 = host_machine.system() == 'cygwin' or host_machine.system() == 'windows'
-posix = not win32
+hos = host_machine.system() == 'horizon'
+posix = not (win32 or hos)
 
 features += {'darwin': darwin}
 features += {'posix': posix}
@@ -322,7 +323,7 @@ if host_machine.system() == 'cygwin'
     flags += [mswin_flags, '-mwin32']
 endif
 
-if posix
+if posix or hos
     flags += ['-D_GNU_SOURCE']
 endif
 
@@ -346,6 +347,8 @@ features += {'libdl': libdl.found()}
 if features['libdl']
     dependencies += libdl
 endif
+
+libnx = cc.find_library('nx', required: false)
 
 # C11 atomics are mandatory but linking to the library is not always required.
 dependencies += cc.find_library('atomic', required: false)
@@ -405,6 +408,17 @@ if features['cocoa']
                      'osdep/utils-mac.c',
                      'osdep/mac/app_bridge.m')
     main_fn_source = files('osdep/main-fn-mac.c')
+endif
+
+if hos
+    path_source  = files('osdep/path-unix.c')
+    timer_source = files('osdep/timer-linux.c')
+    sources += files('osdep/subprocess-dummy.c',
+                     'osdep/terminal-dummy.c',
+                     'osdep/main-fn-unix.c',
+                     'osdep/language-posix.c',
+                     'input/ipc-dummy.c',
+                     'sub/filter_regex.c')
 endif
 
 if posix
@@ -893,6 +907,12 @@ sdl2_audio = get_option('sdl2-audio').require(
 features += {'sdl2-audio': sdl2_audio.allowed()}
 if features['sdl2-audio']
     sources += files('audio/out/ao_sdl.c')
+endif
+
+features += {'hos-audio': hos and libnx.found()}
+if features['hos-audio']
+    sources += files('audio/out/ao_hos.c')
+    dependencies += libnx
 endif
 
 sndio = dependency('sndio', required: get_option('sndio'))

@@ -52,7 +52,7 @@ local o = {
     plot_bg_border_width = 0.5,
 
     -- Text style
-    font = "",
+    font = "nintendo_udsg-r_std_003",
     font_mono = "monospace",   -- monospaced digits are sufficient
     font_size = 8,
     font_color = "",
