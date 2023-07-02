@@ -68,6 +68,7 @@ extern const demuxer_desc_t demuxer_desc_null;
 extern const demuxer_desc_t demuxer_desc_timeline;
 
 static const demuxer_desc_t *const demuxer_list[] = {
+    &demuxer_desc_lavf,
     &demuxer_desc_disc,
     &demuxer_desc_edl,
     &demuxer_desc_cue,
@@ -77,7 +78,6 @@ static const demuxer_desc_t *const demuxer_list[] = {
 #if HAVE_LIBARCHIVE
     &demuxer_desc_libarchive,
 #endif
-    &demuxer_desc_lavf,
     &demuxer_desc_mf,
     &demuxer_desc_playlist,
     &demuxer_desc_null,

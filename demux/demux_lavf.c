@@ -115,7 +115,7 @@ const struct m_sub_options demux_lavf_conf = {
     },
     .size = sizeof(struct demux_lavf_opts),
     .defaults = &(const struct demux_lavf_opts){
-        .probeinfo = -1,
+        .probeinfo = 1,
         .allow_mimetype = true,
         .hacks = true,
         // AVPROBE_SCORE_MAX/4 + 1 is the "recommended" limit. Below that, the
