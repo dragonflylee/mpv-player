@@ -307,7 +307,7 @@ features += {'darwin': darwin}
 features += {'posix': posix}
 features += {'dos-paths': win32, 'win32': win32}
 
-mswin_flags = ['-D_WIN32_WINNT=0x0A00', '-DWINVER=0x0A00', '-DUNICODE',
+mswin_flags = ['-D_WIN32_WINNT=0x0602', '-DWINVER=0x0602', '-DUNICODE',
                '-DCOBJMACROS', '-DINITGUID', '-DNOMINMAX',
                '-D_USE_MATH_DEFINES', '-DWIN32_LEAN_AND_MEAN',
                '-D_CRT_DECLARE_NONSTDC_NAMES', '-D_CRT_NONSTDC_NO_WARNINGS',
@@ -497,11 +497,6 @@ endif
 
 features += {'win32-desktop': win32 and not uwp.found()}
 if features['win32-desktop']
-    pathcch = cc.find_library('pathcch', required: false)
-    features += {'pathcch': pathcch.found()}
-    if features['pathcch']
-        dependencies += pathcch
-    endif
     win32_desktop_libs = [cc.find_library('avrt'),
                           cc.find_library('dwmapi'),
                           cc.find_library('gdi32'),
@@ -1007,7 +1002,8 @@ d3d11 = get_option('d3d11').require(
 features += {'d3d11': d3d11.allowed()}
 if features['d3d11']
     sources += files('video/out/d3d11/context.c',
-                     'video/out/d3d11/ra_d3d11.c')
+                     'video/out/d3d11/ra_d3d11.c',
+                     'video/out/d3d11/libmpv_d3d11.c')
     features += {'dxgi-debug-d3d11': cc.has_header_symbol('d3d11sdklayers.h', 'DXGI_DEBUG_D3D11')}
     features += {'dxgi-debug': cc.has_header_symbol('dxgidebug.h', 'IID_IDXGIInfoQueue')}
 endif
@@ -1776,6 +1772,9 @@ if get_option('libmpv')
 
     headers = ['libmpv/client.h', 'libmpv/render.h',
                'libmpv/render_gl.h', 'libmpv/stream_cb.h']
+    if features['d3d11']
+        headers += 'libmpv/render_dxgi.h'
+    endif
     install_headers(headers, subdir: 'mpv')
 
     # Allow projects to build with libmpv by cloning into ./subprojects/mpv
