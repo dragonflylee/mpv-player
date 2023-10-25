@@ -955,6 +955,23 @@ if features['direct3d']
     sources += files('video/out/vo_direct3d.c')
 endif
 
+deko3d_opt = get_option('deko3d').require(
+    get_option('gpl') and hos,
+    error_message: 'the build is not GPL or this is not a horizon os!',
+)
+libuam = dependency('uam', required: deko3d_opt)
+deko3d_dep = cc.find_library('deko3d', required: deko3d_opt)
+deko3d = cc.has_header('deko3d.h', dependencies: deko3d_dep, required: deko3d_opt)
+features += {'deko3d': deko3d and libuam.found()}
+if features['deko3d']
+    dependencies += libuam
+    sources += files(
+        'video/out/deko3d/context.c',  
+        'video/out/deko3d/ra_dk.c',     
+        'video/out/deko3d/libmpv_dk.c', 
+        'video/out/hwdec/hwdec_deko3d.c')
+endif
+
 drm = dependency('libdrm', version: '>= 2.4.105', required: get_option('drm'))
 features += {'drm': drm.found() and (features['vt.h'] or features['consio.h'] or features['wsdisplay-usl-io.h'])}
 if features['drm']
@@ -1796,6 +1813,9 @@ if get_option('libmpv')
 
     headers = ['libmpv/client.h', 'libmpv/render.h',
                'libmpv/render_gl.h', 'libmpv/stream_cb.h']
+    if features['deko3d']
+        headers += 'libmpv/render_dk3d.h'
+    endif
     install_headers(headers, subdir: 'mpv')
 
     # Allow projects to build with libmpv by cloning into ./subprojects/mpv
