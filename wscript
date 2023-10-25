@@ -872,6 +872,14 @@ video_output_features = [
         'desc': "POSIX shared memory API",
         'deps': 'posix',
         'func': check_statement('sys/mman.h', 'shm_open("",0,0)')
+    }, {
+        'name': '--deko3d',
+        'desc': 'deko3d context support',
+        'deps': 'hos && gpl',
+        'func': compose_checks(
+                    check_cc(header_name='deko3d.h', lib='deko3d'),
+                    check_pkg_config('uam'),
+                ),
     }
 ]
 
