@@ -20,8 +20,15 @@
 #include <math.h>
 #include <wchar.h>
 #include <windows.h>
-#include <errors.h>
+// Workaround for redefinition of some guids in mingw. ks.h has to be included
+// before other ks*.h headers, but mingw fails then.
+#ifdef __MINGW32__
+#include <mmreg.h>
 #include <ksguid.h>
+#else
+#include <ksguid.h>
+#include <mmreg.h>
+#endif
 #include <ksmedia.h>
 #include <avrt.h>
 
