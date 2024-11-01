@@ -601,6 +601,9 @@ static bool dk_tex_download(struct ra *ra, struct ra_tex_download_params *params
     if (!memblock)
         return false;
 
+    // Flush CPU cache on the target memory
+    dkMemBlockFlushCpuCache(memblock, memblk_off, params->stride * params->tex->params.h);
+
     DkCopyBuf copy_buf = (DkCopyBuf){
 	    .addr        = dkMemBlockGetGpuAddr(memblock) + memblk_off,
 	    .rowLength   = params->stride,
