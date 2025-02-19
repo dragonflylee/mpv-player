@@ -776,6 +776,39 @@ static void luma_coeffs(struct mp_cmat *mat, float lr, float lg, float lb)
     };
 }
 
+static void create_saturation_matrix(float m[3][3], float s) {
+    const float luma_r = 0.299f;
+    const float luma_g = 0.587f;
+    const float luma_b = 0.114f;
+
+    for(int i = 0; i < 3; ++i) {
+        float common_r = luma_r * (1 - s);
+        float common_g = luma_g * (1 - s);
+        float common_b = luma_b * (1 - s);
+
+        m[i][0] = (i == 0) ? (common_r + s) : common_r;
+        m[i][1] = (i == 1) ? (common_g + s) : common_g;
+        m[i][2] = (i == 2) ? (common_b + s) : common_b;
+    }
+}
+
+static void create_hue_matrix(float m[3][3], float h) {
+    float cos_theta = cos(h);
+    float sin_theta = sin(h);
+
+    m[0][0] = 0.299f + 0.701f * cos_theta + 0.168f * sin_theta;
+    m[0][1] = 0.587f - 0.587f * cos_theta - 0.330f * sin_theta;
+    m[0][2] = 0.114f - 0.114f * cos_theta + 0.497f * sin_theta;
+
+    m[1][0] = 0.299f - 0.299f * cos_theta - 0.328f * sin_theta;
+    m[1][1] = 0.587f + 0.413f * cos_theta + 0.035f * sin_theta;
+    m[1][2] = 0.114f - 0.114f * cos_theta + 0.292f * sin_theta;
+
+    m[2][0] = 0.299f - 0.300f * cos_theta + 1.250f * sin_theta;
+    m[2][1] = 0.587f - 0.588f * cos_theta - 1.050f * sin_theta;
+    m[2][2] = 0.114f + 0.886f * cos_theta - 0.203f * sin_theta;
+}
+
 // get the coefficients of the yuv -> rgb conversion matrix
 void mp_get_csp_matrix(struct mp_csp_params *params, struct mp_cmat *m)
 {
@@ -801,7 +834,7 @@ void mp_get_csp_matrix(struct mp_csp_params *params, struct mp_cmat *m)
     }
     case MP_CSP_RGB: {
         *m = (struct mp_cmat){{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}};
-        levels_in = -1;
+        levels_in = MP_CSP_LEVELS_NONE;
         break;
     }
     case MP_CSP_XYZ: {
@@ -811,7 +844,7 @@ void mp_get_csp_matrix(struct mp_csp_params *params, struct mp_cmat *m)
         // provided in mp_csp_params. (At the risk of clipping, if the
         // chosen primaries are too small to fit the actual data)
         mp_get_xyz2rgb_coeffs(params, MP_INTENT_RELATIVE_COLORIMETRIC, m);
-        levels_in = -1;
+        levels_in = MP_CSP_LEVELS_NONE;
         break;
     }
     case MP_CSP_YCGCO: {
@@ -827,7 +860,7 @@ void mp_get_csp_matrix(struct mp_csp_params *params, struct mp_cmat *m)
     };
 
     if (params->is_float)
-        levels_in = -1;
+        levels_in = MP_CSP_LEVELS_NONE;
 
     if ((colorspace == MP_CSP_BT_601 || colorspace == MP_CSP_BT_709 ||
          colorspace == MP_CSP_SMPTE_240M || colorspace == MP_CSP_BT_2020_NC))
@@ -840,6 +873,18 @@ void mp_get_csp_matrix(struct mp_csp_params *params, struct mp_cmat *m)
             float u = m->m[i][1], v = m->m[i][2];
             m->m[i][1] = huecos * u - huesin * v;
             m->m[i][2] = huesin * u + huecos * v;
+        }
+    }
+    else if (colorspace == MP_CSP_RGB)
+    {
+        if (params->saturation != 1.0f) {
+            create_saturation_matrix(m->m, params->saturation);
+        }
+
+        if (params->hue != 0.0f) {
+            float hue_matrix[3][3];
+            create_hue_matrix(hue_matrix, params->hue);
+            mp_mul_matrix3x3(m->m, hue_matrix);
         }
     }
 
@@ -858,7 +903,7 @@ void mp_get_csp_matrix(struct mp_csp_params *params, struct mp_cmat *m)
     switch (levels_in) {
     case MP_CSP_LEVELS_TV: yuvlev = yuvlim; break;
     case MP_CSP_LEVELS_PC: yuvlev = yuvfull; break;
-    case -1: yuvlev = anyfull; break;
+    case MP_CSP_LEVELS_NONE: yuvlev = anyfull; break;
     default:
         MP_ASSERT_UNREACHABLE();
     }

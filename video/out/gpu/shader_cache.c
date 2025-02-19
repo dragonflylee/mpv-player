@@ -128,8 +128,10 @@ void gl_sc_reset(struct gl_shader_cache *sc)
     sc->prelude_text.len = 0;
     sc->header_text.len = 0;
     sc->text.len = 0;
-    for (int n = 0; n < sc->num_uniforms; n++)
+    for (int n = 0; n < sc->num_uniforms; n++) {
         talloc_free((void *)sc->uniforms[n].input.name);
+        talloc_free((void *)sc->uniforms[n].input.semantic);
+    }
     sc->num_uniforms = 0;
     sc->ubo_binding = 0;
     sc->ubo_size = 0;
@@ -240,8 +242,10 @@ static struct sc_uniform *find_uniform(struct gl_shader_cache *sc,
         struct sc_uniform *u = &sc->uniforms[n];
         if (strcmp(u->input.name, name) == 0) {
             const char *allocname = u->input.name;
+            const char *allocsem  = u->input.semantic;
             *u = new;
             u->input.name = allocname;
+            u->input.semantic = allocsem;
             return u;
         }
     }
@@ -329,6 +333,7 @@ void gl_sc_uniform_texture(struct gl_shader_cache *sc, char *name,
     u->input.type = RA_VARTYPE_TEX;
     u->glsl_type = glsl_type;
     u->input.binding = gl_sc_next_binding(sc, u->input.type);
+    u->input.semantic = sc->ra->glsl_gxm ? talloc_asprintf(NULL, "TEXUNIT%d", u->input.binding) : NULL;
     u->v.tex = tex;
 }
 
@@ -713,7 +718,13 @@ static void add_uniforms(struct gl_shader_cache *sc, bstr *dst)
             // after program creation).
             if (sc->ra->glsl_vulkan)
                 ADD(dst, "layout(binding=%d) ", u->input.binding);
-            ADD(dst, "uniform %s %s;\n", u->glsl_type, u->input.name);
+            if (u->input.semantic) {
+                ADD(dst, "uniform %s %s : %s;\n", u->glsl_type, u->input.name, u->input.semantic);
+            } else if (sc->ra->glsl_gxm) {
+                ADD(dst, "uniform %s %s : BUFFER[%d];\n", u->glsl_type, u->input.name, sc->ubo_binding);
+            } else {
+                ADD(dst, "uniform %s %s;\n", u->glsl_type, u->input.name);
+            }
             break;
         case RA_VARTYPE_BUF_RO:
             ADD(dst, "layout(std140, binding=%d) uniform %s { %s };\n",
@@ -768,8 +779,11 @@ static void gl_sc_generate(struct gl_shader_cache *sc,
     assert(!sc->needs_reset);
     sc->needs_reset = true;
 
+    // Using ubo_binding as uniform buffer index for GXM
+    if (sc->ra->glsl_gxm)
+        sc->ubo_binding = sc->ra->gxm_buffer_index;
     // If using a UBO, pick a binding (needed for shader generation)
-    if (sc->ubo_size)
+    else if (sc->ubo_size)
         sc->ubo_binding = gl_sc_next_binding(sc, RA_VARTYPE_BUF_RO);
 
     for (int n = 0; n < MP_ARRAY_SIZE(sc->tmp); n++)
@@ -777,7 +791,11 @@ static void gl_sc_generate(struct gl_shader_cache *sc,
 
     // set up shader text (header + uniforms + body)
     bstr *header = &sc->tmp[0];
-    ADD(header, "#version %d%s\n", glsl_version, glsl_es >= 300 ? " es" : "");
+    if (sc->ra->glsl_gxm) {
+        ADD(header, "#pragma pack_matrix (column_major)\n");
+    } else {
+        ADD(header, "#version %d%s\n", glsl_version, glsl_es >= 300 ? " es" : "");
+    }
     if (type == RA_RENDERPASS_TYPE_COMPUTE) {
         // This extension cannot be enabled in fragment shader. Enable it as
         // an exception for compute shader.
@@ -797,13 +815,25 @@ static void gl_sc_generate(struct gl_shader_cache *sc,
             ADD(header, "precision mediump sampler3D;\n");
     }
 
-    if (glsl_version >= 130) {
+    if (sc->ra->glsl_gxm) {
+        ADD(header, "#define mix lerp\n");
+        ADD(header, "#define fract frac\n");
+        ADD(header, "#define texture tex2D\n");
+        ADD(header, "#define vec4 float4\n");
+        ADD(header, "#define vec3 float3\n");
+        ADD(header, "#define vec2 float2\n");
+        ADD(header, "#define mat4 float4x4\n");
+        ADD(header, "#define mat3 float3x3\n");
+        ADD(header, "#define mat2 float2x2\n");
+    } else if (glsl_version >= 130) {
         ADD(header, "#define tex1D texture\n");
         ADD(header, "#define tex3D texture\n");
+        ADD(header, "#define mul(a, b) a * b\n");
     } else {
         ADD(header, "#define tex1D texture1D\n");
         ADD(header, "#define tex3D texture3D\n");
         ADD(header, "#define texture texture2D\n");
+        ADD(header, "#define mul(a, b) a * b\n");
     }
 
     // Additional helpers.
@@ -834,12 +864,15 @@ static void gl_sc_generate(struct gl_shader_cache *sc,
                 // setting raster pos. requires setting gl_Position magic variable
                 assert(e->dim_v == 2 && e->type == RA_VARTYPE_FLOAT);
                 ADD(vert_head, "%s%s vec2 vertex_position;\n", loc, vert_in);
+                if (sc->ra->glsl_gxm)
+                    ADD(vert_head, "%s vec4 gl_Position : POSITION;\n", vert_out);
                 ADD(vert_body, "gl_Position = vec4(vertex_position, 1.0, 1.0);\n");
             } else {
-                ADD(vert_head, "%s%s %s vertex_%s;\n", loc, vert_in, glsl_type, e->name);
-                ADD(vert_head, "%s%s %s %s;\n", loc, vert_out, glsl_type, e->name);
+                char * sematic = e->semantic ? mp_tprintf(32, " : %s", e->semantic) : "";
+                ADD(vert_head, "%s%s %s vertex_%s%s;\n", loc, vert_in, glsl_type, e->name, sematic);
+                ADD(vert_head, "%s%s %s %s%s;\n", loc, vert_out, glsl_type, e->name, sematic);
                 ADD(vert_body, "%s = vertex_%s;\n", e->name, e->name);
-                ADD(frag_vaos, "%s%s %s %s;\n", loc, frag_in, glsl_type, e->name);
+                ADD(frag_vaos, "%s%s %s %s%s;\n", loc, frag_in, glsl_type, e->name, sematic);
             }
         }
         ADD(vert_body, "}\n");
@@ -849,7 +882,7 @@ static void gl_sc_generate(struct gl_shader_cache *sc,
         // fragment shader; still requires adding used uniforms and VAO elements
         frag = &sc->tmp[4];
         ADD_BSTR(frag, *header);
-        if (glsl_version >= 130) {
+        if (glsl_version >= 130 && !sc->ra->glsl_gxm) {
             ADD(frag, "%sout vec4 out_color;\n",
                 sc->ra->glsl_vulkan ? "layout(location=0) " : "");
         }
@@ -859,7 +892,7 @@ static void gl_sc_generate(struct gl_shader_cache *sc,
         ADD_BSTR(frag, sc->prelude_text);
         ADD_BSTR(frag, sc->header_text);
 
-        ADD(frag, "void main() {\n");
+        ADD(frag, "void main(%s) {\n", sc->ra->glsl_gxm ? "out vec4 out_color : COLOR0" : "");
         // we require _all_ frag shaders to write to a "vec4 color"
         ADD(frag, "vec4 color = vec4(0.0, 0.0, 0.0, 1.0);\n");
         ADD_BSTR(frag, sc->text);

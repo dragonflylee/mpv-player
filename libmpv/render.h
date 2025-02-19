@@ -421,6 +421,17 @@ typedef enum mpv_render_param_type {
      * See MPV_RENDER_PARAM_SW_STRIDE for alignment requirements.
      */
     MPV_RENDER_PARAM_SW_POINTER = 20,
+    /**
+     * Required parameters for initializing the gxm renderer. Valid for
+     * mpv_render_context_create().
+     * Type: mpv_gxm_init_params*
+     */
+    MPV_RENDER_PARAM_GXM_INIT_PARAMS = 21,
+    /**
+     * Describes a gxm render target. Valid for mpv_render_context_render().
+     * Type: SceGxmTexture*
+     */
+    MPV_RENDER_PARAM_GXM_FBO = 22,
 } mpv_render_param_type;
 
 /**
@@ -467,6 +478,8 @@ typedef struct mpv_render_param {
 #define MPV_RENDER_API_TYPE_OPENGL "opengl"
 // See section "Software renderer"
 #define MPV_RENDER_API_TYPE_SW "sw"
+// See render_gxm.h
+#define MPV_RENDER_API_TYPE_GXM "gxm"
 
 /**
  * Flags used in mpv_render_frame_info.flags. Each value represents a bit in it.

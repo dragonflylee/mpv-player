@@ -1249,6 +1249,7 @@ static struct mp_pass_perf render_pass_quad(struct gl_video *p,
             .dim_v = 2,
             .dim_m = 1,
             .offset = p->vao_len * sizeof(struct vertex_pt),
+            .semantic = p->ra->glsl_gxm ? talloc_asprintf(p, "TEXCOORD%d", p->vao_len - 1) : NULL,
         });
     }
 
@@ -1276,11 +1277,21 @@ static struct mp_pass_perf render_pass_quad(struct gl_video *p,
             struct gl_transform tr = s->transform;
             float tx = (n / 2) * s->w;
             float ty = (n % 2) * s->h;
+            int tex_width = s->tex->params.w;
+            int tex_height = s->tex->params.h;
+
+            if (p->ra->glsl_gxm) {
+                int aligned_width = MP_ALIGN_UP(s->tex->params.w, 8);
+                // Add 1 extra pixel to avoid float precision issues
+                if (aligned_width != s->tex->params.w)
+                    tex_width = aligned_width + 1;
+            }
+
             gl_transform_vec(tr, &tx, &ty);
             bool rect = s->tex->params.non_normalized;
             // vec2 texcoordN in idx N+1
-            vs[i + 1].x = tx / (rect ? 1 : s->tex->params.w);
-            vs[i + 1].y = ty / (rect ? 1 : s->tex->params.h);
+            vs[i + 1].x = tx / (rect ? 1 : tex_width);
+            vs[i + 1].y = ty / (rect ? 1 : tex_height);
         }
     }
 
@@ -2340,6 +2351,20 @@ static void pass_convert_yuv(struct gl_video *p)
     mp_csp_equalizer_state_get(p->video_eq, &cparams);
     p->user_gamma = 1.0 / (cparams.gamma * p->opts.gamma);
 
+    if (p->ra->glsl_gxm && p->hwdec_mapper) {
+        struct mp_cmat m = {{{0}}};
+        cparams.color.space = MP_CSP_RGB;
+        mp_get_csp_matrix(&cparams, &m);
+
+        gl_sc_uniform_mat3(sc, "colormatrix", true, &m.m[0][0]);
+        gl_sc_uniform_vec3(sc, "colormatrix_c", m.c);
+
+        GLSL(color.rgb = mul(colormatrix, color.rgb) + colormatrix_c;)
+
+        p->components = 3;
+        return;
+    }
+
     pass_describe(p, "color conversion");
 
     if (p->color_swizzle[0])
@@ -2359,7 +2384,7 @@ static void pass_convert_yuv(struct gl_video *p)
     gl_sc_uniform_mat3(sc, "colormatrix", true, &m.m[0][0]);
     gl_sc_uniform_vec3(sc, "colormatrix_c", m.c);
 
-    GLSL(color.rgb = mat3(colormatrix) * color.rgb + colormatrix_c;)
+    GLSL(color.rgb = mul(colormatrix, color.rgb) + colormatrix_c;)
 
     if (cparams.color.space == MP_CSP_XYZ) {
         pass_delinearize(p->sc, p->image_params.color.gamma);
@@ -2974,6 +2999,10 @@ static void pass_render_frame_dumb(struct gl_video *p)
         gl_transform_trans(img[i].transform, &t);
         img[i].transform = t;
 
+        if (p->ra->glsl_gxm && p->hwdec_mapper) {
+            assert(p->plane_count == 1);
+            img[i].components = 3;
+        }
         copy_image(p, &index, img[i]);
     }
 
@@ -3631,6 +3660,11 @@ static bool pass_upload_image(struct gl_video *p, struct mp_image *mpi, uint64_t
 
         if (!p->hwdec_mapper)
             goto error;
+
+        if (p->ra->glsl_gxm) {
+            p->plane_count = 1;
+            vimg->mpi->num_planes = 1;
+        }
 
         pass_describe(p, "map frame (hwdec)");
         timer_pool_start(p->upload_timer);

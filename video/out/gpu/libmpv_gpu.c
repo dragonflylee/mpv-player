@@ -9,6 +9,9 @@ static const struct libmpv_gpu_context_fns *context_backends[] = {
 #if HAVE_GL
     &libmpv_gpu_context_gl,
 #endif
+#if HAVE_GXM
+    &libmpv_gpu_context_gxm,
+#endif
     NULL
 };
 
@@ -185,6 +188,7 @@ static int render(struct render_backend *ctx, mpv_render_param *params,
                                              &(int){0});
 
     struct ra_fbo target = {.tex = tex, .flip = flip};
+    if (p->context->fns->start_frame) p->context->fns->start_frame(p->context);
     gl_video_render_frame(p->renderer, frame, target, RENDER_FRAME_DEF);
     p->context->fns->done_frame(p->context, frame->display_synced);
 

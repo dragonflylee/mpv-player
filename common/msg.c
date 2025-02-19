@@ -43,6 +43,21 @@
 #include "msg.h"
 #include "msg_control.h"
 
+#if defined(HAVE_GXM)
+#include <psp2/kernel/clib.h>
+static void _fprintf(char* fmt, ...) {
+    static char _buf[0x100];
+    va_list a;
+    va_start(a, fmt);
+    vsnprintf(_buf, sizeof(_buf), fmt, a);
+    sceClibPrintf("%s", _buf);
+    va_end(a);
+}
+
+#define fprintf(file, ...) _fprintf(__VA_ARGS__)
+#define fopen(...) 0
+#endif
+
 // log buffer size (lines) for terminal level and logfile level
 #define TERM_BUF 100
 #define FILE_BUF 100

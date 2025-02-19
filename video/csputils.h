@@ -47,6 +47,7 @@ enum mp_csp_levels {
     MP_CSP_LEVELS_AUTO,
     MP_CSP_LEVELS_TV,
     MP_CSP_LEVELS_PC,
+    MP_CSP_LEVELS_NONE,
     MP_CSP_LEVELS_COUNT,
 };
 

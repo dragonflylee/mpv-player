@@ -106,6 +106,8 @@ option('ios-gl', type: 'feature', value: 'auto', description: 'iOS OpenGL ES har
 option('rpi-mmal', type: 'feature', value: 'auto', description: 'Raspberry Pi MMAL hwaccel')
 option('videotoolbox-gl', type: 'feature', value: 'auto', description: 'Videotoolbox with OpenGL')
 option('vulkan-interop', type: 'feature', value: 'auto', description: 'Vulkan graphics interop')
+option('gxm', type: 'feature', value: 'auto', description: 'gxm context support')
+option('vitashark', type: 'feature', value: 'auto', description: 'runtime shader compiling')
 
 # macOS features
 option('macos-10-11-features', type: 'feature', value: 'auto', description: 'macOS 10.11 SDK Features')

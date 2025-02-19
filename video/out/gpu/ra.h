@@ -11,6 +11,8 @@ struct ra {
     int glsl_version;       // GLSL version (e.g. 300 => 3.0)
     bool glsl_es;           // use ES dialect
     bool glsl_vulkan;       // use vulkan dialect
+    bool glsl_gxm;          // use gxm dialect
+    int gxm_buffer_index;   // buffer index for gxm
 
     struct mp_log *log;
 
@@ -254,6 +256,7 @@ struct ra_renderpass_input {
     // Bindings must be unique within each namespace, as specified by
     // desc_namespace()
     int binding;
+    const char* semantic;
 };
 
 // Represents the layout requirements of an input value

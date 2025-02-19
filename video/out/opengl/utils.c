@@ -79,29 +79,20 @@ void gl_upload_tex(GL *gl, GLenum target, GLenum format, GLenum type,
                    const void *dataptr, int stride,
                    int x, int y, int w, int h)
 {
-    int bpp = gl_bytes_per_pixel(format, type);
     const uint8_t *data = dataptr;
-    int y_max = y + h;
-    if (w <= 0 || h <= 0 || !bpp)
+    if (w <= 0 || h <= 0)
         return;
     assert(stride > 0);
-    gl->PixelStorei(GL_UNPACK_ALIGNMENT, get_alignment(stride));
-    int slice = h;
-    if (gl->mpgl_caps & MPGL_CAP_ROW_LENGTH) {
-        // this is not always correct, but should work for MPlayer
-        gl->PixelStorei(GL_UNPACK_ROW_LENGTH, stride / bpp);
+    if (stride != w) {
+        gl->PixelStorei(GL_UNPACK_ALIGNMENT, get_alignment(w));
+        uint8_t *tail = data + w;
+        for (int i = 1; i < h; i++, tail += w) {
+            memmove(tail, data + i * stride, w);
+        }
     } else {
-        if (stride != bpp * w)
-            slice = 1; // very inefficient, but at least it works
+        gl->PixelStorei(GL_UNPACK_ALIGNMENT, get_alignment(stride));
     }
-    for (; y + slice <= y_max; y += slice) {
-        gl->TexSubImage2D(target, 0, x, y, w, slice, format, type, data);
-        data += stride * slice;
-    }
-    if (y < y_max)
-        gl->TexSubImage2D(target, 0, x, y, w, y_max - y, format, type, data);
-    if (gl->mpgl_caps & MPGL_CAP_ROW_LENGTH)
-        gl->PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    gl->TexImage2D(target, 0, format, w, h, 0, format, type, data);
     gl->PixelStorei(GL_UNPACK_ALIGNMENT, 4);
 }
 

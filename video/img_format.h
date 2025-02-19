@@ -324,6 +324,9 @@ enum mp_imgfmt {
 #endif
     IMGFMT_DRMPRIME,        // AVDRMFrameDescriptor
 
+    IMGFMT_VITA_NV12,
+    IMGFMT_VITA_YUV420P,
+
     // Generic pass-through of AV_PIX_FMT_*. Used for formats which don't have
     // a corresponding IMGFMT_ value.
     IMGFMT_AVPIXFMT_START,

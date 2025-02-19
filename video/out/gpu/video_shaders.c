@@ -892,7 +892,7 @@ void pass_color_map(struct gl_shader_cache *sc, bool is_linear,
         float m[3][3] = {{0}};
         mp_get_cms_matrix(csp_src, csp_dst, MP_INTENT_RELATIVE_COLORIMETRIC, m);
         gl_sc_uniform_mat3(sc, "cms_matrix", true, &m[0][0]);
-        GLSL(color.rgb = cms_matrix * color.rgb;)
+        GLSL(color.rgb = mul(cms_matrix, color.rgb);)
 
         if (!opts->gamut_mode || opts->gamut_mode == GAMUT_DESATURATE) {
             GLSL(float cmin = min(min(color.r, color.g), color.b);)

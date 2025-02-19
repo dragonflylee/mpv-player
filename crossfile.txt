@@ -1,0 +1,15 @@
+[built-in options]
+buildtype = 'release'
+default_library = 'static'
+wrap_mode = 'nodownload'
+[binaries]
+c = 'arm-vita-eabi-gcc'
+cpp = 'arm-vita-eabi-g++'
+ar = 'arm-vita-eabi-ar'
+strip = 'arm-vita-eabi-strip'
+pkg-config = 'arm-vita-eabi-pkg-config'
+[host_machine]
+system = 'psvita'
+cpu_family = 'arm'
+cpu = 'armv7a'
+endian = 'little'

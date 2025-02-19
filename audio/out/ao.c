@@ -53,6 +53,7 @@ extern const struct ao_driver audio_out_wasapi;
 extern const struct ao_driver audio_out_pcm;
 extern const struct ao_driver audio_out_lavc;
 extern const struct ao_driver audio_out_sdl;
+extern const struct ao_driver audio_out_vita;
 
 static const struct ao_driver * const audio_out_drivers[] = {
 // native:
@@ -79,6 +80,9 @@ static const struct ao_driver * const audio_out_drivers[] = {
 #endif
 #if HAVE_OSS_AUDIO
     &audio_out_oss,
+#endif
+#if HAVE_GXM
+    &audio_out_vita,
 #endif
     // wrappers:
 #if HAVE_JACK

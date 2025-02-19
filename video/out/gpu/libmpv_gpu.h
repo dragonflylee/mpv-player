@@ -35,6 +35,10 @@ struct libmpv_gpu_context_fns {
     void (*done_frame)(struct libmpv_gpu_context *ctx, bool ds);
     // Free all data in ctx->priv.
     void (*destroy)(struct libmpv_gpu_context *ctx);
+    void (*start_frame)(struct libmpv_gpu_context *ctx);
 };
 
 extern const struct libmpv_gpu_context_fns libmpv_gpu_context_gl;
+#if HAVE_GXM
+extern const struct libmpv_gpu_context_fns libmpv_gpu_context_gxm;
+#endif

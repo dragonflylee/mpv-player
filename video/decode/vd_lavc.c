@@ -663,6 +663,91 @@ static void reinit(struct mp_filter *vd)
         force_fallback(vd);
 }
 
+#if HAVE_GXM
+#include <psp2/gxm.h>
+#include <psp2/kernel/sysmem.h>
+#include <libavutil/imgutils.h>
+// Taken from https://github.com/fish47/FFmpeg-vita
+
+struct dr_format_spec {
+    enum AVPixelFormat ff_format;
+    SceGxmTextureFormat sce_format;
+    uint32_t alignment_pitch;
+};
+
+static const struct dr_format_spec dr_format_spec_list[] = {
+        { AV_PIX_FMT_VITA_YUV420P, SCE_GXM_TEXTURE_FORMAT_YUV420P3_CSC0, 32 },
+        { AV_PIX_FMT_VITA_NV12, SCE_GXM_TEXTURE_FORMAT_YVU420P2_CSC0, 16 },
+        { AV_PIX_FMT_RGBA, SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR, 16 },
+        { AV_PIX_FMT_BGR565LE, SCE_GXM_TEXTURE_FORMAT_U5U6U5_BGR, 16 },
+        { AV_PIX_FMT_BGR555LE, SCE_GXM_TEXTURE_FORMAT_U1U5U5U5_ABGR, 16 },
+        { AV_PIX_FMT_YUV420P, SCE_GXM_TEXTURE_FORMAT_YUV420P3_CSC0, 32 },
+        { AV_PIX_FMT_NV12, SCE_GXM_TEXTURE_FORMAT_YVU420P2_CSC0, 16 },
+};
+
+static const struct dr_format_spec *get_dr_format_spec(enum AVPixelFormat fmt)
+{
+    for (int i = 0; i < FF_ARRAY_ELEMS(dr_format_spec_list); i++) {
+        if (dr_format_spec_list[i].ff_format == fmt)
+            return &dr_format_spec_list[i];
+    }
+    return NULL;
+}
+
+static void __attribute__((optimize("no-optimize-sibling-calls"))) vram_free(void *opaque, uint8_t *data)
+{
+    SceUID mb = (intptr_t) opaque;
+    sceKernelFreeMemBlock(mb);
+}
+
+static bool vram_alloc(int *size, SceUID *mb, void **ptr)
+{
+    *size = FFALIGN(*size, 256 * 1024);
+    SceUID m = sceKernelAllocMemBlock("gpu_mem",
+                                      SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW,
+                                      *size, NULL);
+    if (m < 0)
+        return false;
+
+    void *p = NULL;
+    if (sceKernelGetMemBlockBase(m, &p) != 0)
+        return false;
+
+    *mb = m;
+    *ptr = p;
+    return true;
+}
+
+static int get_buffer2_direct_gxm(AVCodecContext *avctx, AVFrame *pic, int flags)
+{
+    const struct dr_format_spec *spec = get_dr_format_spec(pic->format);
+    if (!spec)
+        return AVERROR_UNKNOWN;
+
+    struct mp_filter *vd = avctx->opaque;
+    vd_ffmpeg_ctx *p = vd->priv;
+
+    // conform to the memory layout of the decoder output
+    int width = FFMAX(FFALIGN(pic->width, 16), 64);
+    int height = FFMAX(FFALIGN(pic->height, 16), 64);
+    int pitch = FFALIGN(width, spec->alignment_pitch);
+
+    // for simplicity's sake I do not use memory pool, which is more efficient
+    SceUID mb = 0;
+    void *vram = NULL;
+    int size = av_image_get_buffer_size(pic->format, pitch, height, 1);
+    if (!vram_alloc(&size, &mb, &vram)) {
+        MP_ERR(p, "vram alloc failed size=%d\n", size);
+        return AVERROR_UNKNOWN;
+    }
+
+    pic->buf[0] = av_buffer_create(vram, size, vram_free, (void*) mb, 0);
+    av_image_fill_arrays(pic->data, pic->linesize, vram, pic->format, pitch, height, 1);
+
+    return 0;
+}
+#endif
+
 static void init_avctx(struct mp_filter *vd)
 {
     vd_ffmpeg_ctx *ctx = vd->priv;
@@ -750,6 +835,13 @@ static void init_avctx(struct mp_filter *vd)
         mp_set_avcodec_threads(vd->log, avctx, lavc_param->threads);
     }
 
+#if HAVE_GXM
+    if (ctx->use_hwdec && lavc_codec->id == AV_CODEC_ID_H264 ) {
+        avctx->opaque = vd;
+        avctx->get_buffer2 = get_buffer2_direct_gxm;
+        c->lav_codecpar->format = lavc_param->dr ? AV_PIX_FMT_VITA_NV12: AV_PIX_FMT_VITA_YUV420P;
+    }
+#else
     if (!ctx->use_hwdec && ctx->vo && lavc_param->dr) {
         avctx->opaque = vd;
         avctx->get_buffer2 = get_buffer2_direct;
@@ -759,6 +851,7 @@ static void init_avctx(struct mp_filter *vd)
         });
 #endif
     }
+#endif
 
     avctx->flags |= lavc_param->bitexact ? AV_CODEC_FLAG_BITEXACT : 0;
     avctx->flags2 |= lavc_param->fast ? AV_CODEC_FLAG2_FAST : 0;

@@ -292,9 +292,10 @@ if cc.get_id() == 'clang'
     flags += clang_flags
 endif
 
+psvita = host_machine.system() == 'psvita'
 darwin = host_machine.system() == 'darwin'
 win32 = host_machine.system() == 'cygwin' or host_machine.system() == 'windows'
-posix = not win32
+posix = not win32 and not psvita
 
 features += {'darwin': darwin}
 features += {'posix': posix}
@@ -309,6 +310,28 @@ endif
 
 if host_machine.system() == 'cygwin'
     flags += [mswin_flags, '-mwin32']
+endif
+
+if psvita
+    dependencies += cc.find_library('SceAudio_stub')
+    link_flags += ['-Wl,-q', '-Wl,-z,nocopyreloc']
+    features += {'vitashark': get_option('vitashark').allowed()}
+    if (features['vitashark'])
+        dependencies += [cc.find_library('vitashark'),
+                         cc.find_library('SceShaccCgExt'),
+                         cc.find_library('taihen_stub'),
+                         cc.find_library('SceShaccCg_stub')]
+    endif
+    features += {'gxm': get_option('gxm').allowed()}
+    sources += files('osdep/terminal-dummy.c',
+                     'osdep/path-unix.c',
+                     'osdep/timer-linux.c',
+                     'osdep/language-posix.c',
+                     'audio/out/ao_vita.c',
+                     'video/out/gxm/libmpv_gxm.c',
+                     'video/out/gxm/ra_gxm.c',
+                     'video/out/hwdec/hwdec_gxm.c',
+    )
 endif
 
 noexecstack = false
@@ -332,7 +355,7 @@ endif
 features += {'ta-leak-report': get_option('ta-leak-report')}
 
 libdl = dependency('dl', required: false)
-features += {'libdl': libdl.found()}
+features += {'libdl': libdl.found() and not psvita}
 if features['libdl']
     dependencies += libdl
 endif
@@ -396,6 +419,10 @@ if features['cocoa']
                      'video/out/cocoa/events_view.m',
                      'video/out/cocoa/video_view.m',
                      'video/out/cocoa/window.m')
+endif
+
+if psvita
+    includedir += include_directories('osdep/vita/include')
 endif
 
 if posix
@@ -1713,7 +1740,7 @@ major = client_h_define.split('|')[0].split('<<')[0].strip('() ')
 minor = client_h_define.split('|')[1].strip('() ')
 client_api_version = major + '.' + minor + '.0'
 
-libmpv = library('mpv', sources, dependencies: dependencies, gnu_symbol_visibility: 'hidden',
+libmpv = library('mpv', sources, pic: false, dependencies: dependencies, gnu_symbol_visibility: 'hidden',
                  version: client_api_version, include_directories: includedir,
                  install: get_option('libmpv'), build_by_default: get_option('libmpv'))
 
@@ -1723,7 +1750,7 @@ if get_option('libmpv')
     pkg.generate(libmpv, version: client_api_version,
                  description: 'mpv media player client library')
 
-    headers = ['libmpv/client.h', 'libmpv/render.h',
+    headers = ['libmpv/client.h', 'libmpv/render.h', 'libmpv/render_gxm.h',
                'libmpv/render_gl.h', 'libmpv/stream_cb.h']
     install_headers(headers, subdir: 'mpv')
 endif
