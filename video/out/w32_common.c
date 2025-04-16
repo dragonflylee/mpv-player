@@ -78,6 +78,9 @@ EXTERN_C IMAGE_DOS_HEADER __ImageBase;
 #define WM_SHOWMENU (WM_USER + 1)
 
 struct w32_api {
+    HRESULT (WINAPI *pGetDpiForMonitor)(HMONITOR, MONITOR_DPI_TYPE, UINT*, UINT*);
+    BOOL (WINAPI *pAdjustWindowRectExForDpi)(LPRECT lpRect, DWORD dwStyle, BOOL bMenu, DWORD dwExStyle, UINT dpi);
+    int (WINAPI *pGetSystemMetricsForDpi)(int nIndex, UINT dpi);
     BOOLEAN (WINAPI *pShouldAppsUseDarkMode)(void);
     DWORD (WINAPI *pSetPreferredAppMode)(DWORD mode);
 };
@@ -194,7 +197,9 @@ struct vo_w32_state {
 
 static inline int get_system_metrics(struct vo_w32_state *w32, int metric)
 {
-    return GetSystemMetricsForDpi(metric, w32->dpi);
+    return w32->api.pGetSystemMetricsForDpi
+               ? w32->api.pGetSystemMetricsForDpi(metric, w32->dpi)
+               : GetSystemMetrics(metric);
 }
 
 static void adjust_window_rect(struct vo_w32_state *w32, HWND hwnd, RECT *rc)
@@ -202,8 +207,13 @@ static void adjust_window_rect(struct vo_w32_state *w32, HWND hwnd, RECT *rc)
     if (!w32->opts->border && !IsMaximized(w32->window))
         return;
 
-    AdjustWindowRectExForDpi(rc, GetWindowLongPtrW(hwnd, GWL_STYLE), 0,
-                             GetWindowLongPtrW(hwnd, GWL_EXSTYLE), w32->dpi);
+    if (w32->api.pAdjustWindowRectExForDpi) {
+        w32->api.pAdjustWindowRectExForDpi(rc,
+            GetWindowLongPtrW(hwnd, GWL_STYLE), 0,
+            GetWindowLongPtrW(hwnd, GWL_EXSTYLE), w32->dpi);
+    } else {
+        AdjustWindowRect(rc, GetWindowLongPtrW(hwnd, GWL_STYLE), 0);
+    }
 }
 
 static bool check_windows10_build(DWORD build)
@@ -669,7 +679,8 @@ static void update_dpi(struct vo_w32_state *w32)
     HDC hdc = NULL;
     int dpi = 0;
 
-    if (GetDpiForMonitor(w32->monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY) == S_OK) {
+    if (w32->api.pGetDpiForMonitor && w32->api.pGetDpiForMonitor(w32->monitor,
+                                     MDT_EFFECTIVE_DPI, &dpiX, &dpiY) == S_OK) {
         dpi = (int)dpiX;
         MP_VERBOSE(w32, "DPI detected from the new API: %d\n", dpi);
     } else if ((hdc = GetDC(NULL))) {
@@ -2012,6 +2023,18 @@ void vo_w32_config(struct vo *vo)
 
 static void w32_api_load(struct vo_w32_state *w32)
 {
+    HMODULE shcore_dll = LoadLibraryW(L"shcore.dll");
+    // Available since Win8.1
+    w32->api.pGetDpiForMonitor = !shcore_dll ? NULL :
+                (void *)GetProcAddress(shcore_dll, "GetDpiForMonitor");
+
+    HMODULE user32_dll = LoadLibraryW(L"user32.dll");
+    // Available since Win10
+    w32->api.pAdjustWindowRectExForDpi = !user32_dll ? NULL :
+                (void *)GetProcAddress(user32_dll, "AdjustWindowRectExForDpi");
+    w32->api.pGetSystemMetricsForDpi = !user32_dll ? NULL :
+                (void *)GetProcAddress(user32_dll, "GetSystemMetricsForDpi");
+
     // Dark mode related functions, available since the 1809 Windows 10 update
     // Check the Windows build version as on previous versions used ordinals
     // may point to unexpected code/data. Alternatively could check uxtheme.dll
