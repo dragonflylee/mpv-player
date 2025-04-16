@@ -392,7 +392,7 @@ int mp_initialize(struct MPContext *mpctx, char **options)
     if (handle_help_options(mpctx))
         return 1; // help
 
-#if HAVE_WIN32_DESKTOP
+#if HAVE_WIN32_EXECUTABLE
     if (mp_w32_handle_register(mpctx))
         return 1; // register/unregister
 #endif

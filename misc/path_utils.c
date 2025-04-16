@@ -34,7 +34,7 @@
 #include "misc/ctype.h"
 #include "misc/path_utils.h"
 
-#if HAVE_DOS_PATHS
+#if defined(HAVE_PATHCCH) && HAVE_PATHCCH
 #include <windows.h>
 #include <pathcch.h>
 #endif
@@ -185,7 +185,7 @@ char *mp_normalize_path(void *talloc_ctx, const char *path)
         path = mp_path_join(tmp, cwd, path);
     }
 
-#if HAVE_DOS_PATHS
+#if defined(HAVE_PATHCCH) && HAVE_PATHCCH
     wchar_t *pathw = mp_from_utf8(tmp, path);
     wchar_t *read = pathw, *write = pathw;
     wchar_t prev = '\0';
@@ -209,6 +209,8 @@ char *mp_normalize_path(void *talloc_ctx, const char *path)
     wchar_t *pathc = talloc_array(tmp, wchar_t, max_size);
     HRESULT hr = PathCchCanonicalizeEx(pathc, max_size, pathw, PATHCCH_ALLOW_LONG_PATHS);
     result = SUCCEEDED(hr) ? mp_to_utf8(talloc_ctx, pathc) : talloc_strdup(talloc_ctx, path);
+#elif HAVE_DOS_PATHS
+    return talloc_strdup(talloc_ctx, path);
 #else
     result = talloc_strdup(tmp, "");
     const char *next;
