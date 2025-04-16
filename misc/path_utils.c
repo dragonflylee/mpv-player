@@ -37,6 +37,11 @@
 #if HAVE_DOS_PATHS
 #include <windows.h>
 #include <pathcch.h>
+
+// PathCchCanonicalizeEx is available since Windows 8. Load it dynamically so
+// older systems (e.g. Windows 7) fall back to the non-canonicalized path.
+static HRESULT (WINAPI *pPathCchCanonicalizeEx)(PWSTR, size_t, PCWSTR, ULONG);
+
 #endif
 
 char *mp_basename(const char *path)
@@ -173,6 +178,18 @@ char *mp_normalize_path(void *talloc_ctx, const char *path)
     }
 
 #if HAVE_DOS_PATHS
+    static bool pathcch_loaded;
+    if (!pathcch_loaded) {
+        HMODULE pathcch_dll = LoadLibraryW(L"api-ms-win-core-path-l1-1-0.dll");
+        pPathCchCanonicalizeEx = !pathcch_dll ? NULL :
+                    (void *)GetProcAddress(pathcch_dll, "PathCchCanonicalizeEx");
+        pathcch_loaded = true;
+    }
+    if (!pPathCchCanonicalizeEx) {
+        talloc_free(tmp);
+        return talloc_strdup(talloc_ctx, path);
+    }
+
     wchar_t *pathw = mp_from_utf8(tmp, path);
     wchar_t *read = pathw, *write = pathw;
     wchar_t prev = '\0';
@@ -194,7 +211,7 @@ char *mp_normalize_path(void *talloc_ctx, const char *path)
     *write = '\0';
     size_t max_size = wcslen(pathw) + 1;
     wchar_t *pathc = talloc_array(tmp, wchar_t, max_size);
-    HRESULT hr = PathCchCanonicalizeEx(pathc, max_size, pathw, PATHCCH_ALLOW_LONG_PATHS);
+    HRESULT hr = pPathCchCanonicalizeEx(pathc, max_size, pathw, PATHCCH_ALLOW_LONG_PATHS);
     char *ret = SUCCEEDED(hr) ? mp_to_utf8(talloc_ctx, pathc) : talloc_strdup(talloc_ctx, path);
     talloc_free(tmp);
     return ret;

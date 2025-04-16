@@ -77,7 +77,7 @@ static const char def_config[] =
 #include "osdep/win32/smtc.h"
 #endif
 
-#if HAVE_WIN32_DESKTOP
+#if HAVE_WIN32_EXECUTABLE
 #include "osdep/w32_register.h"
 #endif
 
@@ -391,7 +391,7 @@ int mp_initialize(struct MPContext *mpctx, char **options)
     if (handle_help_options(mpctx))
         return 1; // help
 
-#if HAVE_WIN32_DESKTOP
+#if HAVE_WIN32_EXECUTABLE
     if (mp_w32_handle_register(mpctx))
         return 1; // register/unregister
 #endif
