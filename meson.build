@@ -319,7 +319,7 @@ features += {'darwin': darwin}
 features += {'posix': posix}
 features += {'dos-paths': win32, 'win32': win32}
 
-mswin_flags = ['-D_WIN32_WINNT=0x0A00', '-DWINVER=0x0A00', '-DUNICODE',
+mswin_flags = ['-D_WIN32_WINNT=0x0602', '-DWINVER=0x0602', '-DUNICODE',
                '-DCOBJMACROS', '-DINITGUID', '-DNOMINMAX',
                '-D_USE_MATH_DEFINES', '-DWIN32_LEAN_AND_MEAN',
                '-D_CRT_DECLARE_NONSTDC_NAMES', '-D_CRT_NONSTDC_NO_WARNINGS',
@@ -500,7 +500,6 @@ if features['win32-desktop']
                           cc.find_library('imm32'),
                           cc.find_library('ntdll'),
                           cc.find_library('ole32'),
-                          cc.find_library('pathcch'),
                           cc.find_library('shcore'),
                           cc.find_library('user32'),
                           cc.find_library('uuid'),
