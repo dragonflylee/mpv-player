@@ -1230,11 +1230,12 @@ static bool demux_lavf_read_packet(struct demuxer *demux,
 {
     lavf_priv_t *priv = demux->priv;
 
-    AVPacket *pkt = &(AVPacket){0};
+    AVPacket *pkt = av_packet_alloc();
+    MP_HANDLE_OOM(pkt);
     int r = av_read_frame(priv->avfc, pkt);
     update_read_stats(demux);
     if (r < 0) {
-        av_packet_unref(pkt);
+        av_packet_free(&pkt);
         if (r == AVERROR_EOF)
             return false;
         MP_WARN(demux, "error reading packet: %s.\n", av_err2str(r));
@@ -1256,13 +1257,13 @@ static bool demux_lavf_read_packet(struct demuxer *demux,
     AVStream *st = priv->avfc->streams[pkt->stream_index];
 
     if (!demux_stream_is_selected(stream)) {
-        av_packet_unref(pkt);
+        av_packet_free(&pkt);
         return true; // don't signal EOF if skipping a packet
     }
 
-    struct demux_packet *dp = new_demux_packet_from_avpacket(pkt);
+    struct demux_packet *dp = new_demux_packet_from_avpacket(demux->packet_pool, pkt);
     if (!dp) {
-        av_packet_unref(pkt);
+        av_packet_free(&pkt);
         return true;
     }
 
@@ -1276,7 +1277,7 @@ static bool demux_lavf_read_packet(struct demuxer *demux,
     dp->keyframe = pkt->flags & AV_PKT_FLAG_KEY;
     if (pkt->flags & AV_PKT_FLAG_DISCARD)
         MP_ERR(demux, "Edit lists are not correctly supported (FFmpeg issue).\n");
-    av_packet_unref(pkt);
+    av_packet_free(&pkt);
 
     if (priv->format_hack.clear_filepos)
         dp->pos = -1;
