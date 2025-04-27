@@ -22,6 +22,16 @@
 #define MP_UNUSED
 #endif
 
+#ifndef __has_attribute
+#define __has_attribute(x) 0
+#endif
+
+#if __has_attribute(nonstring)
+#define MP_NONSTRING __attribute__((nonstring))
+#else
+#define MP_NONSTRING
+#endif
+
 #if defined(__GNUC__) || defined(__clang__)
 #define PRINTF_ATTRIBUTE(a1, a2) __attribute__((format(printf, a1, a2)))
 #define SCANF_ATTRIBUTE(a1, a2) __attribute__((format(scanf, a1, a2)))
