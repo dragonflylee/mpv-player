@@ -294,7 +294,8 @@ endif
 
 darwin = host_machine.system() == 'darwin'
 win32 = host_machine.system() == 'cygwin' or host_machine.system() == 'windows'
-posix = not win32
+hos = host_machine.system() == 'horizon'
+posix = not (win32 or hos)
 
 features += {'darwin': darwin}
 features += {'posix': posix}
@@ -417,6 +418,17 @@ if darwin
     path_source = files('osdep/path-darwin.c')
     sources += path_source + files('osdep/timer-darwin.c')
 
+endif
+
+if hos
+    sources += files('osdep/path-unix.c',
+                     'osdep/timer-linux.c',
+                     'osdep/subprocess-dummy.c',
+                     'osdep/terminal-dummy.c',
+                     'osdep/main-fn-unix.c',
+                     'osdep/language-posix.c',
+                     'input/ipc-dummy.c',
+                     'sub/filter_regex.c')
 endif
 
 if posix and not darwin
@@ -855,6 +867,13 @@ if features['sdl2-audio']
     sources += files('audio/out/ao_sdl.c')
 endif
 
+libnx = cc.find_library('nx', required: false)
+features += {'hos-audio': hos and libnx.found()}
+if features['hos-audio']
+    sources += files('audio/out/ao_hos.c')
+    dependencies += libnx
+endif
+
 sndio = dependency('sndio', required: get_option('sndio'))
 features += {'sndio': sndio.found()}
 if features['sndio']
@@ -891,6 +910,23 @@ direct3d = cc.has_header('d3d9.h', required: direct3d_opt)
 features += {'direct3d': direct3d}
 if features['direct3d']
     sources += files('video/out/vo_direct3d.c')
+endif
+
+deko3d_opt = get_option('deko3d').require(
+    get_option('gpl') and hos,
+    error_message: 'the build is not GPL or this is not a horizon os!',
+)
+libuam = dependency('uam', required: deko3d_opt)
+deko3d_dep = cc.find_library('deko3d', required: deko3d_opt)
+deko3d = cc.has_header('deko3d.h', dependencies: deko3d_dep, required: deko3d_opt)
+features += {'deko3d': deko3d and libuam.found()}
+if features['deko3d']
+    dependencies += libuam
+    sources += files(
+        'video/out/deko3d/context.c',  
+        'video/out/deko3d/ra_dk.c',     
+        'video/out/deko3d/libmpv_dk.c', 
+        'video/out/hwdec/hwdec_deko3d.c')
 endif
 
 drm = dependency('libdrm', version: '>= 2.4.75', required: get_option('drm'))
@@ -1725,6 +1761,9 @@ if get_option('libmpv')
 
     headers = ['libmpv/client.h', 'libmpv/render.h',
                'libmpv/render_gl.h', 'libmpv/stream_cb.h']
+    if features['deko3d']
+        headers += 'libmpv/render_dk3d.h'
+    endif
     install_headers(headers, subdir: 'mpv')
 endif
 
