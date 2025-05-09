@@ -206,10 +206,8 @@ static void enable_output(struct sd *sd, bool enable)
         static char * const pl_font_names[] = {
             [PlSharedFontType_Standard]             = "nintendo_udsg-r_std_003",
             [PlSharedFontType_ChineseSimplified]    = "nintendo_udsg-r_org_zh-cn_003",
-            [PlSharedFontType_ExtChineseSimplified] = "nintendo_udsg-r_ext_zh-cn_003",
             [PlSharedFontType_ChineseTraditional]   = "nintendo_udjxh-db_zh-tw_003",
             [PlSharedFontType_KO]                   = "nintendo_udsg-r_ko_003",
-            [PlSharedFontType_NintendoExt]          = "NintendoExt003",
         };
 
         Result rc = plInitialize(PlServiceType_User);

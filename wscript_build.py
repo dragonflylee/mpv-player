@@ -263,6 +263,7 @@ def build(ctx):
     language_c = ctx.pick_first_matching_dep([
         ( "osdep/language-apple.c",              "cocoa" ),
         ( "osdep/language-win.c",                "win32-desktop" ),
+        ( "osdep/language-switch.c",             "hos" ),
         ( "osdep/language-posix.c" ),
     ])
 
