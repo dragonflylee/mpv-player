@@ -313,7 +313,8 @@ endif
 
 darwin = host_machine.system() == 'darwin'
 win32 = host_machine.system() == 'cygwin' or host_machine.system() == 'windows'
-posix = not win32
+hos = host_machine.system() == 'horizon'
+posix = not (win32 or hos)
 
 features += {'darwin': darwin}
 features += {'posix': posix}
@@ -337,7 +338,7 @@ if host_machine.system() == 'cygwin'
     flags += [mswin_flags, '-mwin32']
 endif
 
-if posix
+if posix or hos
     flags += ['-D_GNU_SOURCE']
 endif
 
@@ -416,6 +417,41 @@ if features['cocoa']
                      'osdep/mac/app_bridge.m',
                      'player/clipboard/clipboard-mac.m')
     main_fn_source = files('osdep/main-fn-mac.c')
+endif
+
+if hos
+    path_source  = files('osdep/path-unix.c')
+    timer_source = files('osdep/timer-linux.c')
+    sources += files('osdep/subprocess-dummy.c',
+                     'osdep/terminal-dummy.c',
+                     'osdep/main-fn-unix.c',
+                     'osdep/language-posix.c',
+                     'input/ipc-dummy.c',
+                     'sub/filter_regex.c')
+endif
+
+libnx = cc.find_library('nx', required: false)
+features += {'hos-audio': hos and libnx.found()}
+if features['hos-audio']
+    sources += files('audio/out/ao_hos.c')
+    dependencies += libnx
+endif
+
+deko3d_opt = get_option('deko3d').require(
+    get_option('gpl') and hos,
+    error_message: 'the build is not GPL or this is not a horizon os!',
+)
+libuam = dependency('uam', required: deko3d_opt)
+deko3d_dep = cc.find_library('deko3d', required: deko3d_opt)
+deko3d = cc.has_header('deko3d.h', dependencies: deko3d_dep, required: deko3d_opt)
+features += {'deko3d': deko3d and libuam.found()}
+if features['deko3d']
+    dependencies += libuam
+    sources += files(
+        'video/out/deko3d/context.c',  
+        'video/out/deko3d/ra_dk.c',     
+        'video/out/deko3d/libmpv_dk.c', 
+        'video/out/hwdec/hwdec_deko3d.c')
 endif
 
 if posix
@@ -1777,6 +1813,9 @@ if get_option('libmpv')
 
     headers = ['include/mpv/client.h', 'include/mpv/render.h',
                'include/mpv/render_gl.h', 'include/mpv/stream_cb.h']
+    if features['deko3d']
+        headers += 'include/mpv/render_dk3d.h'
+    endif
     install_headers(headers, subdir: 'mpv')
 
     # Allow projects to build with libmpv by cloning into ./subprojects/mpv
