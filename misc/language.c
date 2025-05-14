@@ -29,8 +29,8 @@
 #include <strings.h>
 
 static const struct lang {
-    char match[4];
-    char canonical[4];
+    char match[4] MP_NONSTRING;
+    char canonical[4] MP_NONSTRING;
 } langmap[] = {
     {"aa", "aar"},
     {"ab", "abk"},

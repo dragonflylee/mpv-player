@@ -13,6 +13,16 @@
 #define MP_FALLTHROUGH do {} while (0)
 #endif
 
+#ifndef __has_attribute
+#define __has_attribute(x) 0
+#endif
+
+#if __has_attribute(nonstring)
+#define MP_NONSTRING __attribute__((nonstring))
+#else
+#define MP_NONSTRING
+#endif
+
 // Broken crap with __USE_MINGW_ANSI_STDIO
 #if defined(__MINGW32__) && defined(__GNUC__) && !defined(__clang__)
 #undef PRINTF_ATTRIBUTE
