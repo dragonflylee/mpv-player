@@ -37,7 +37,7 @@ static const struct clipboard_backend *const clipboard_backend_list[] = {
 #if HAVE_WIN32_DESKTOP
     &clipboard_backend_win32,
 #endif
-#if HAVE_COCOA
+#if HAVE_COCOA && HAVE_SWIFT
     &clipboard_backend_mac,
 #endif
 #if HAVE_WAYLAND_PROTOCOLS_1_39

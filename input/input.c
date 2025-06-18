@@ -1526,7 +1526,7 @@ static void reload_opts(struct input_ctx *ictx, bool shutdown)
 {
     m_config_cache_update(ictx->opts_cache);
 
-#if HAVE_COCOA
+#if HAVE_COCOA && HAVE_SWIFT
     struct input_opts *opts = ictx->opts;
 
     if (ictx->using_cocoa_media_keys != (opts->use_media_keys && !shutdown)) {

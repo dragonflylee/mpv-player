@@ -188,7 +188,7 @@ void mp_destroy(struct MPContext *mpctx)
 
     osd_free(mpctx->osd);
 
-#if HAVE_COCOA
+#if HAVE_COCOA && HAVE_SWIFT
     cocoa_set_input_context(NULL);
 #endif
 
@@ -311,7 +311,7 @@ struct MPContext *mp_create(void)
     mp_clients_init(mpctx);
     mpctx->osd = osd_create(mpctx->global);
 
-#if HAVE_COCOA
+#if HAVE_COCOA && HAVE_SWIFT
     cocoa_set_input_context(mpctx->input);
 #endif
 
@@ -401,7 +401,7 @@ int mp_initialize(struct MPContext *mpctx, char **options)
 
     MP_STATS(mpctx, "start init");
 
-#if HAVE_COCOA
+#if HAVE_COCOA && HAVE_SWIFT
     mpv_handle *ctx = mp_new_client(mpctx->clients, "mac");
     cocoa_set_mpv_handle(ctx);
 #endif

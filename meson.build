@@ -413,8 +413,7 @@ if features['cocoa']
     sources += files('osdep/language-mac.c',
                      'osdep/path-mac.m',
                      'osdep/utils-mac.c',
-                     'osdep/mac/app_bridge.m',
-                     'player/clipboard/clipboard-mac.m')
+                     'osdep/mac/app_bridge.m')
     main_fn_source = files('osdep/main-fn-mac.c')
 endif
 
@@ -1575,7 +1574,8 @@ if features['cocoa'] and features['swift']
                            'video/out/mac/common.swift',
                            'video/out/mac/title_bar.swift',
                            'video/out/mac/view.swift',
-                           'video/out/mac/window.swift')
+                           'video/out/mac/window.swift',
+                           'player/clipboard/clipboard-mac.m')
 endif
 
 macos_10_15_4_features = get_option('macos-10-15-4-features').require(
