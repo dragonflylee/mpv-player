@@ -710,7 +710,7 @@ static void uninit(struct vo *vo)
 
 static int preinit(struct vo *vo)
 {
-#if HAVE_MACOS_COCOA_CB
+#if HAVE_MACOS_COCOA_CB && HAVE_SWIFT
     cocoa_init_cocoa_cb();
 #else
     if (vo->probing)
