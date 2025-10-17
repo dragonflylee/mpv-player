@@ -135,8 +135,10 @@ static int render(struct render_backend *ctx, mpv_render_param *params,
     if (err < 0) return err;
     if (!target_tex) return MPV_ERROR_GENERIC;
 
+    bool flip = GET_MPV_RENDER_PARAM(params, MPV_RENDER_PARAM_FLIP_Y, int, 0);
+
     // Render the video frame.
-    pl_video_render(p->video_engine, frame, target_tex);
+    pl_video_render(p->video_engine, frame, target_tex, flip);
 
     // Destroy the temporary wrapper texture via the RA.
     ra_next_tex_destroy(p->context->ra, &target_tex);

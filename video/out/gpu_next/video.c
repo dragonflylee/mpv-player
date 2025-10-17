@@ -312,13 +312,15 @@ static void update_overlays(struct pl_video *p, struct mp_osd_res res,
     talloc_free(subs);
 }
 
+const struct pl_distort_params pl_distort_flip_params = { .transform.mat.m = {{1, 0}, {0, -1}}, };
+
 /**
  * @brief Main rendering function for a single video frame.
  * @param p The pl_video engine context.
  * @param frame The mpv frame to render, containing the current image.
  * @param target_tex The destination GPU texture to render to.
  */
-void pl_video_render(struct pl_video *p, struct vo_frame *frame, pl_tex target_tex)
+void pl_video_render(struct pl_video *p, struct vo_frame *frame, pl_tex target_tex, bool flip)
 {
     // Describe the target surface for libplacebo.
     struct pl_frame target_frame = {
@@ -392,6 +394,7 @@ void pl_video_render(struct pl_video *p, struct vo_frame *frame, pl_tex target_t
     struct pl_render_params params = {
         .upscaler = &pl_filter_nearest,
         .downscaler = &pl_filter_nearest,
+        .distort_params = flip ? &pl_distort_flip_params : NULL,
     };
 
     // Declare a local struct to hold the color adjustment values.
