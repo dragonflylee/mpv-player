@@ -322,15 +322,6 @@ if psvita
                          cc.find_library('taihen_stub'),
                          cc.find_library('SceShaccCg_stub')]
     endif
-    if get_option('cplayer')
-        sources += files('osdep/main-fn-vita.c')
-        link_flags += ['-lvita2d',
-                       '-lSceCommonDialog_stub',
-                       '-lSceAppMgr_stub',
-                       '-lSceGxm_stub',
-                       '-lSceDisplay_stub',
-                       '-lSceCtrl_stub']
-    endif
     features += {'gxm': get_option('gxm').allowed()}
     sources += files('osdep/terminal-dummy.c',
                      'osdep/path-unix.c',
@@ -1794,50 +1785,6 @@ if get_option('cplayer')
 
     mpv = executable('mpv', objects: libmpv.extract_all_objects(recursive: true), dependencies: dependencies,
                      win_subsystem: 'windows,6.0', include_directories: includedir, install: true)
-
-    create_vita_self = custom_target('create_vita_self',
-                  input: mpv,
-                  output: 'mpv.self',
-                  command: [
-                      'vita-elf-create', 'mpv', 'mpv.velf',
-                      '&&',
-                      'vita-make-fself', '-c', 'mpv.velf', 'mpv.self'
-                  ],
-                  depends: mpv,
-                  build_by_default: false
-    )
-
-    send_eboot = custom_target('send_eboot',
-                  input: create_vita_self,
-                  output: 'mpv.self.send',
-                  command: [
-                      'curl', '-T', 'mpv.self', 'ftp://192.168.1.140:1337/ux0:/app/MPV000000/eboot.bin',
-                  ],
-                  depends: create_vita_self,
-                  build_by_default: false
-    )
-
-    create_vita_vpk = custom_target('create_vita_vpk',
-                  input: create_vita_self,
-                  output: 'mpv.vpk',
-                  command: [
-                      'vita-mksfoex', '-d', 'ATTRIBUTE2=12', '-s', 'APP_VER=01.00', '-s', 'TITLE_ID=MPV000000', 'mpv', 'mpv.vpk_param.sfo',
-                      '&&',
-                      'vita-pack-vpk', '-a', '../etc/sce_sys=sce_sys', '-s', 'mpv.vpk_param.sfo', '-b', 'mpv.self', 'mpv.vpk'
-                  ],
-                  depends: create_vita_self,
-                  build_by_default: false
-    )
-
-    send_vpk = custom_target('send_vpk',
-                  input: create_vita_self,
-                  output: 'mpv.vpk.send',
-                  command: [
-                      'curl', '-T', 'mpv.vpk', 'ftp://192.168.1.140:1337/ux0:/',
-                  ],
-                  depends: create_vita_vpk,
-                  build_by_default: false
-    )
 endif
 
 if get_option('tests')
