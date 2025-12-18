@@ -246,6 +246,8 @@ const struct autoprobe_info hwdec_autoprobe_info[] = {
     {"vdpau-copy",      HWDEC_FLAG_AUTO | HWDEC_FLAG_WHITELIST},
     {"drm",             HWDEC_FLAG_AUTO | HWDEC_FLAG_WHITELIST},
     {"drm-copy",        HWDEC_FLAG_AUTO | HWDEC_FLAG_WHITELIST},
+    {"vita",            HWDEC_FLAG_AUTO | HWDEC_FLAG_WHITELIST},
+    {"vita-copy",       HWDEC_FLAG_AUTO | HWDEC_FLAG_WHITELIST},
     {"mmal",            HWDEC_FLAG_AUTO},
     {"mmal-copy",       HWDEC_FLAG_AUTO | HWDEC_FLAG_WHITELIST},
     {"mediacodec",      HWDEC_FLAG_AUTO},
