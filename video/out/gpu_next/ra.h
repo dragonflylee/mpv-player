@@ -54,27 +54,11 @@ bool ra_next_render_image(struct ra_next *ra, const struct pl_frame *src,
 pl_fmt ra_next_find_fmt(struct ra_next *ra, enum pl_fmt_type type, int num_comps,
                    int comp_bits, int alpha_bits, unsigned caps);
 
-
-/* Get the pl_renderer associated with this RA (may be NULL). */
-pl_renderer ra_get_renderer(struct ra_next *ra);
-
-/* Get the raw pl_gpu (for pl_tex_create / pl_tex_download etc). */
-pl_gpu ra_get_gpu(struct ra_next *ra);
-
-/* Flush libplacebo internal caches (wrapper for pl_renderer_flush_cache). */
-void ra_reset(struct ra_next *ra);
-
 /* Create the pl-specific RA implementation. */
 struct ra_next *ra_pl_create(pl_gpu gpu, struct mp_log *log, pl_log log_pl);
 
 /* Destroys the pl-specific RA implementation. */
 void ra_pl_destroy(struct ra_next **rap);
-
-/* Optional helper: let VO set a vo pointer on RA implementation. */
-void ra_pl_set_vo(struct ra_next *ra, struct vo *vo);
-
-/* Return the pl_log associated with the RA (or NULL). */
-pl_log ra_get_pl_log(struct ra_next *ra);
 
 /* Reset the RA (flush caches etc). */
 void ra_pl_reset(struct ra_next *ra);

@@ -134,52 +134,6 @@ void ra_cleanup_pl_frame(struct ra_next *ra, struct pl_frame *frame)
 }
 
 /**
- * @brief Gets the underlying libplacebo renderer instance.
- * @param ra The rendering abstraction context.
- * @return A pointer to the pl_renderer, or NULL if not initialized.
- */
-pl_renderer ra_get_renderer(struct ra_next *ra)
-{
-    struct ra_priv *p = (struct ra_priv *)ra;
-    return p ? p->renderer : NULL;
-}
-
-/**
- * @brief Gets the underlying libplacebo GPU handle.
- * @param ra The rendering abstraction context.
- * @return The pl_gpu handle.
- */
-pl_gpu ra_get_gpu(struct ra_next *ra)
-{
-    return ra ? ra->gpu : NULL;
-}
-
-/**
- * @brief Gets the libplacebo logging context.
- * @param ra The rendering abstraction context.
- * @return The pl_log handle.
- */
-pl_log ra_get_pl_log(struct ra_next *ra)
-{
-    if (!ra)
-        return NULL;
-    struct ra_priv *p = (struct ra_priv *)ra;
-    return p->pl_log;
-}
-
-/**
- * @brief Associates a video output (vo) context with the rendering abstraction.
- * @param ra The rendering abstraction context.
- * @param vo The video output context to associate.
- */
-void ra_pl_set_vo(struct ra_next *ra, struct vo *vo)
-{
-    struct ra_priv *p = (struct ra_priv *)ra;
-    p->vo = vo;
-    mp_msg(ra->log, MSGL_DEBUG, "ra_pl_set_vo: vo=%p osd=%p\n", (void*)vo, vo ? (void*)vo->osd : NULL);
-}
-
-/**
  * @brief Frees all GPU textures associated with a given `pl_frame`.
  * @param ra The rendering abstraction context.
  * @param frame The frame to clean up.
