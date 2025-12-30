@@ -17,20 +17,13 @@
 
 #pragma once
 
-#include "libplacebo/gpu.h"        // for pl_gpu
-#include "libplacebo/log.h"        // for pl_log
-#include "libplacebo/swapchain.h"  // for pl_swapchain
-#include "stdbool.h"               // for bool
+#include <libplacebo/renderer.h>
 
-/**
- * The rendering abstraction context.
- */
+struct mp_log;
+struct ra_ctx;
 struct ra_ctx_opts;
 struct vo;
 
-/**
- * The main GPU context structure.
- */
 struct gpu_ctx {
     struct mp_log *log;
     struct ra_ctx *ra_ctx;

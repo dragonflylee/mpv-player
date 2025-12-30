@@ -318,12 +318,12 @@ static void update_overlays(struct pl_video *p, struct mp_osd_res res,
  * @param frame The mpv frame to render, containing the current image.
  * @param target_tex The destination GPU texture to render to.
  */
-void pl_video_render(struct pl_video *p, struct vo_frame *frame, pl_tex target_tex)
+void pl_video_render(struct pl_video *p, struct vo_frame *frame, pl_tex target_tex, bool flipped)
 {
     // Describe the target surface for libplacebo.
     struct pl_frame target_frame = {
         .num_planes = 1,
-        .planes[0] = { .texture = target_tex, .components = 4, .component_mapping = {0,1,2,3} },
+        .planes[0] = { .texture = target_tex, .components = 4, .component_mapping = {0,1,2,3}, .flipped = flipped },
         .crop = { .x0 = p->current_dst.x0, .y0 = p->current_dst.y0, .x1 = p->current_dst.x1, .y1 = p->current_dst.y1 },
         .color = pl_color_space_srgb,
         .repr = pl_color_repr_rgb,

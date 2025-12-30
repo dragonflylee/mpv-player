@@ -15,32 +15,24 @@
  * License along with mpv.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <libplacebo/config.h>                   // for PL_HAVE_OPENGL, PL_API_VER
+#include <libplacebo/config.h>
 
 #ifdef PL_HAVE_D3D11
 #include <libplacebo/d3d11.h>
 #endif
 
 #ifdef PL_HAVE_OPENGL
-#include "mpv/render_gl.h"                       // for mpv_opengl_init_params
-#include <libplacebo/opengl.h>                   // for pl_opengl_destroy
-#include "video/out/gpu_next/libmpv_gpu_next.h"  // for libmpv_gpu_next_context
-#include "video/out/gpu_next/ra.h"               // for ra_pl_create, ra_pl_...
+#include <libplacebo/opengl.h>
 #endif
 
-#include <stddef.h>                              // for NULL
-#include "config.h"                              // for HAVE_GL, HAVE_D3D11
-#include "context.h"                             // for gpu_ctx
-#include "common/msg.h"                          // for MP_ERR, mp_msg, mp_msg_err
-#include "mpv/client.h"                          // for mpv_error
-#include "mpv/render.h"                          // for mpv_render_param
-#include "options/options.h"                     // for mp_vo_opts
-#include "ta/ta_talloc.h"                        // for talloc_zero, talloc_...
-#include "video/out/gpu/context.h"               // for ra_ctx_opts, ra_ctx
-#include "video/out/libmpv.h"                    // for get_mpv_render_param
-#include "video/out/opengl/common.h"             // for GL
-#include "video/out/placebo/utils.h"             // for mppl_log_set_probing
-#include "video/out/vo.h"                        // for vo
+#include "context.h"
+#include "config.h"
+#include "common/common.h"
+#include "options/m_config.h"
+#include "video/out/placebo/utils.h"
+#include "video/out/gpu/video.h"
+#include "video/out/gpu_next/libmpv_gpu_next.h"
+#include "video/out/libmpv.h"
 
 #if HAVE_D3D11
 #include "osdep/windows_utils.h"
@@ -49,28 +41,25 @@
 #endif
 
 #if HAVE_GL
-#include "video/out/opengl/ra_gl.h"              // for ra_is_gl, ra_gl_get
+#include "mpv/render_gl.h"
+#include "video/out/gpu_next/ra.h"
+#include "video/out/opengl/context.h"
+#include "video/out/opengl/ra_gl.h"
 # if HAVE_EGL
-#include <EGL/egl.h>                             // for eglGetCurrentContext
+#include <EGL/egl.h>
 # endif
 #endif
 
 #if HAVE_VULKAN
-#include "video/out/vulkan/context.h"            // for ra_vk_ctx_get
+#include "video/out/vulkan/context.h"
 #endif
 
-#if HAVE_GL
 // Store Libplacebo OpenGL context information.
 struct priv {
     pl_log pl_log;
-    pl_opengl gl;
     pl_gpu gpu;
     struct ra_next *ra;
-
-    // Store a persistent copy of the init params to avoid a dangling pointer.
-    mpv_opengl_init_params gl_params;
 };
-#endif
 
 #if HAVE_D3D11
 static bool d3d11_pl_init(struct vo *vo, struct gpu_ctx *ctx,
@@ -260,33 +249,6 @@ skip_common_pl_cleanup:
 
 #if HAVE_GL && defined(PL_HAVE_OPENGL)
 /**
- * @brief Callback to make the OpenGL context current.
- * @param priv Pointer to the private data (mpv_opengl_init_params).
- * @return True on success, false on failure.
- */
-static bool pl_callback_makecurrent_gl(void *priv)
-{
-    mpv_opengl_init_params *gl_params = priv;
-    // The mpv render API contract specifies that the client must make the
-    // context current inside its get_proc_address callback. We can trigger
-    // this by calling it with a harmless, common function name.
-    if (gl_params && gl_params->get_proc_address) {
-        gl_params->get_proc_address(gl_params->get_proc_address_ctx, "glGetString");
-        return true;
-    }
-
-    return false;
-}
-
-/**
- * @brief Callback to release the OpenGL context.
- * @param priv Pointer to the private data (mpv_opengl_init_params).
- */
-static void pl_callback_releasecurrent_gl(void *priv)
-{
-}
-
-/**
  * @brief Callback to log messages from libplacebo.
  * @param log_priv Pointer to the private data (mp_log).
  * @param level The log level.
@@ -314,9 +276,6 @@ static int libmpv_gpu_next_init_gl(struct libmpv_gpu_next_context *ctx, mpv_rend
     if (!gl_params || !gl_params->get_proc_address)
         return MPV_ERROR_INVALID_PARAMETER;
 
-    // Make a persistent copy of the params struct's contents.
-    p->gl_params = *gl_params;
-
     // Setup libplacebo logging
     struct pl_log_params log_params = {
         .log_level = PL_LOG_DEBUG
@@ -329,25 +288,26 @@ static int libmpv_gpu_next_init_gl(struct libmpv_gpu_next_context *ctx, mpv_rend
     }
 
     p->pl_log = pl_log_create(PL_API_VER, &log_params);
-    p->gl = pl_opengl_create(p->pl_log, pl_opengl_params(
-        .get_proc_addr_ex = (pl_voidfunc_t (*)(void*, const char*))gl_params->get_proc_address,
+    pl_opengl opengl = pl_opengl_create(p->pl_log, pl_opengl_params(
+        .get_proc_addr_ex = (void *) gl_params->get_proc_address,
         .proc_ctx = gl_params->get_proc_address_ctx,
-        .make_current = pl_callback_makecurrent_gl,
-        .release_current = pl_callback_releasecurrent_gl,
-        .priv = &p->gl_params // Pass the ADDRESS of our persistent copy
+# if HAVE_EGL
+        .egl_display = eglGetCurrentDisplay();
+        .egl_context = eglGetCurrentContext();
+# endif
     ));
 
-    if (!p->gl) {
+    if (!opengl) {
         MP_ERR(ctx, "Failed to create libplacebo OpenGL context.\n");
         pl_log_destroy(&p->pl_log);
         return MPV_ERROR_UNSUPPORTED;
     }
-    p->gpu = p->gl->gpu;
+    p->gpu = opengl->gpu;
 
     // Pass the libplacebo log to the RA as well.
     p->ra = ra_pl_create(p->gpu, ctx->log, p->pl_log);
     if (!p->ra) {
-        pl_opengl_destroy(&p->gl);
+        pl_opengl_destroy(&opengl);
         pl_log_destroy(&p->pl_log);
         return MPV_ERROR_VO_INIT_FAILED;
     }
@@ -416,7 +376,8 @@ static void libmpv_gpu_next_destroy_gl(struct libmpv_gpu_next_context *ctx)
         ra_pl_destroy(&p->ra);
     }
 
-    pl_opengl_destroy(&p->gl);
+    pl_opengl opengl = pl_opengl_get(p->gpu);
+    pl_opengl_destroy(&opengl);
     pl_log_destroy(&p->pl_log);
 }
 

@@ -1,15 +1,7 @@
 #include "libmpv_gpu_next.h"
-#include <stddef.h>             // for NULL
 #include "common/msg.h"         // for mp_log_new, MP_ERR
 #include "config.h"             // for HAVE_GL
-#include "libplacebo/config.h"  // for PL_HAVE_OPENGL
-#include "libplacebo/gpu.h"     // for pl_tex, pl_tex_params, pl_tex_t
-#include "mpv/client.h"         // for mpv_error
-#include "mpv/render.h"         // for mpv_render_param, mpv_render_param_type
 #include "ra.h"                 // for ra_next_tex_destroy
-#include "stdbool.h"            // for bool, false
-#include "string.h"             // for strcmp
-#include "ta/ta_talloc.h"       // for talloc_free, talloc_zero
 #include "video.h"              // for pl_video_check_format, pl_video_init
 #include "video/hwdec.h"        // for hwdec_devices_create, hwdec_devices_d...
 #include "video/out/libmpv.h"   // for render_backend, get_mpv_render_param
@@ -135,8 +127,10 @@ static int render(struct render_backend *ctx, mpv_render_param *params,
     if (err < 0) return err;
     if (!target_tex) return MPV_ERROR_GENERIC;
 
+    bool flipped = GET_MPV_RENDER_PARAM(params, MPV_RENDER_PARAM_FLIP_Y, int, 0);
+
     // Render the video frame.
-    pl_video_render(p->video_engine, frame, target_tex);
+    pl_video_render(p->video_engine, frame, target_tex, flipped);
 
     // Destroy the temporary wrapper texture via the RA.
     ra_next_tex_destroy(p->context->ra, &target_tex);
