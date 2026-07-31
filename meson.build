@@ -1800,7 +1800,7 @@ if get_option('libmpv')
     headers = ['include/mpv/client.h', 'include/mpv/render.h',
                'include/mpv/render_gl.h', 'include/mpv/stream_cb.h']
     if features['d3d11']
-        headers += 'include/mpv/render_dxgi.h'
+        headers += 'include/mpv/render_d3d11.h'
     endif
     install_headers(headers, subdir: 'mpv')
 
