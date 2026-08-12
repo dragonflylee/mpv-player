@@ -767,7 +767,8 @@ static void compile_attach_shader(struct ra *ra, GLuint program,
             MP_VERBOSE(ra, "compile_attach_shader: precompiled shader found, using it\n");
             glShaderBinary(1, &shader, 0, (const void *) shader_bin->src, shader_bin->size);
         } else {
-            MP_VERBOSE(ra, "compile_attach_shader: precompiled shader not found\n");
+            MP_VERBOSE(ra, "compile_attach_shader: precompiled shader not found, falling back to source compilation\n");
+            gl->ShaderSource(shader, 1, &source, NULL);
         }
     } else {
         gl->ShaderSource(shader, 1, &source, NULL);
