@@ -111,12 +111,6 @@ struct mpv_render_context {
     struct mp_vo_opts *vo_opts;
 };
 
-const struct render_backend_fns *render_backends[] = {
-    &render_backend_gpu,
-    &render_backend_sw,
-    NULL
-};
-
 static void update(struct mpv_render_context *ctx)
 {
     mp_mutex_lock(&ctx->update_lock);
@@ -183,6 +177,22 @@ int mpv_render_context_create(mpv_render_context **res, mpv_handle *mpv,
 
     if (GET_MPV_RENDER_PARAM(params, MPV_RENDER_PARAM_ADVANCED_CONTROL, int, 0))
         ctx->advanced_control = true;
+
+    char *backend = get_mpv_render_param(params, MPV_RENDER_PARAM_BACKEND, "gpu");
+    const struct render_backend_fns *render_backends[] = {
+        &render_backend_gpu,
+        &render_backend_sw,
+        NULL
+    };
+
+    if (strcmp(backend, "gpu-next") == 0) {
+        MP_VERBOSE(ctx, "Using the 'gpu-next' render backend.\n");
+        render_backends[0] = &render_backend_gpu_next;
+    } else if (strcmp(backend, "gpu") != 0) {
+        MP_ERR(ctx, "Unknown render backend '%s'.\n", backend);
+        mpv_render_context_free(ctx);
+        return MPV_ERROR_INVALID_PARAMETER;
+    }
 
     int err = MPV_ERROR_NOT_IMPLEMENTED;
     for (int n = 0; render_backends[n]; n++) {

@@ -28,17 +28,19 @@
 #include "context.h"
 #include "config.h"
 #include "common/common.h"
-#include "options/m_config.h"
+#include "video/out/libmpv.h"
 #include "video/out/placebo/utils.h"
-#include "video/out/gpu/video.h"
+#include "video/out/gpu_next/libmpv_gpu_next.h"
 
 #if HAVE_D3D11
+#include "mpv/render_d3d11.h"
 #include "osdep/windows_utils.h"
 #include "video/out/d3d11/ra_d3d11.h"
 #include "video/out/d3d11/context.h"
 #endif
 
 #if HAVE_GL
+#include "mpv/render_gl.h"
 #include "video/out/opengl/context.h"
 #include "video/out/opengl/ra_gl.h"
 # if HAVE_EGL
@@ -234,3 +236,249 @@ skip_common_pl_cleanup:
     talloc_free(ctx);
     *ctxp = NULL;
 }
+
+#if HAVE_GL && defined(PL_HAVE_OPENGL)
+
+struct priv_gl {
+    pl_log pl_log;
+    pl_opengl gl;
+    pl_tex target;
+    int target_fbo;
+    int target_w, target_h;
+};
+
+static bool pl_callback_gl(void *priv)
+{
+    mpv_opengl_init_params *gl_params = priv;
+    return gl_params->get_proc_address(gl_params->get_proc_address_ctx,
+                                       "glGetString") != NULL;
+}
+
+static int gl_init(struct libmpv_gpu_next_context *ctx, mpv_render_param *params)
+{
+    mpv_opengl_init_params *gl_params =
+        get_mpv_render_param(params, MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, NULL);
+    if (!gl_params || !gl_params->get_proc_address)
+        return MPV_ERROR_INVALID_PARAMETER;
+
+    struct priv_gl *p = talloc_zero(ctx, struct priv_gl);
+    // destroy() runs even after a failed init(), so publish priv early.
+    ctx->priv = p;
+
+    p->pl_log = mppl_log_create(ctx, ctx->log);
+    if (!p->pl_log)
+        return MPV_ERROR_VO_INIT_FAILED;
+    mppl_log_set_probing(p->pl_log, false);
+
+    p->gl = pl_opengl_create(p->pl_log, pl_opengl_params(
+        .get_proc_addr_ex = (pl_voidfunc_t (*)(void *, const char *))
+                            gl_params->get_proc_address,
+        .proc_ctx = gl_params->get_proc_address_ctx,
+        .make_current = pl_callback_gl,
+        .priv = gl_params,
+    ));
+    if (!p->gl)
+        return MPV_ERROR_UNSUPPORTED;
+
+    ctx->pl_log = p->pl_log;
+    ctx->gpu = p->gl->gpu;
+    ctx->rr = pl_renderer_create(ctx->pl_log, ctx->gpu);
+    return ctx->rr ? 0 : MPV_ERROR_VO_INIT_FAILED;
+}
+
+static int gl_wrap_fbo(struct libmpv_gpu_next_context *ctx,
+                       mpv_render_param *params, pl_tex *out_tex)
+{
+    struct priv_gl *p = ctx->priv;
+
+    mpv_opengl_fbo *fbo =
+        get_mpv_render_param(params, MPV_RENDER_PARAM_OPENGL_FBO, NULL);
+    if (!fbo || fbo->w <= 0 || fbo->h <= 0)
+        return MPV_ERROR_INVALID_PARAMETER;
+
+    if (!p->target || p->target_fbo != fbo->fbo ||
+        p->target_w != fbo->w || p->target_h != fbo->h)
+    {
+        pl_tex_destroy(ctx->gpu, &p->target);
+        p->target = pl_opengl_wrap(ctx->gpu, pl_opengl_wrap_params(
+            .framebuffer = fbo->fbo,
+            .width = fbo->w,
+            .height = fbo->h,
+            .iformat = fbo->internal_format,
+        ));
+        if (!p->target) {
+            MP_ERR(ctx, "Failed to wrap the provided FBO as a texture.\n");
+            return MPV_ERROR_GENERIC;
+        }
+        p->target_fbo = fbo->fbo;
+        p->target_w = fbo->w;
+        p->target_h = fbo->h;
+    }
+    *out_tex = p->target;
+    return 0;
+}
+
+static void gl_destroy(struct libmpv_gpu_next_context *ctx)
+{
+    struct priv_gl *p = ctx->priv;
+    if (!p)
+        return;
+
+    if (ctx->gpu)
+        pl_tex_destroy(ctx->gpu, &p->target);
+    pl_renderer_destroy(&ctx->rr);
+    pl_opengl_destroy(&p->gl);
+    pl_log_destroy(&p->pl_log);
+}
+
+const struct libmpv_gpu_next_context_fns libmpv_gpu_next_context_gl = {
+    .api_name = MPV_RENDER_API_TYPE_OPENGL,
+    .init = gl_init,
+    .wrap_fbo = gl_wrap_fbo,
+    .destroy = gl_destroy,
+};
+
+#endif // HAVE_GL && defined(PL_HAVE_OPENGL)
+
+#if HAVE_D3D11 && defined(PL_HAVE_D3D11)
+
+struct priv_d3d11 {
+    pl_log pl_log;
+    pl_d3d11 d3d11;
+    pl_tex target;
+    ID3D11Texture2D *target_tex;
+    int target_w, target_h;
+};
+
+// Only used to map hwdec frames; has no ra_ctx_fns and must not be passed to
+// ra_ctx_destroy().
+static void d3d11_create_ra(struct libmpv_gpu_next_context *ctx, ID3D11Device *dev)
+{
+    struct ra_ctx *ra_ctx = talloc_zero(ctx, struct ra_ctx);
+    ra_ctx->log = ctx->log;
+    ra_ctx->global = ctx->global;
+    if (spirv_compiler_init(ra_ctx) &&
+        (ra_ctx->ra = ra_d3d11_create(dev, ctx->log, ra_ctx->spirv)))
+    {
+        ctx->ra_ctx = ra_ctx;
+        return;
+    }
+    MP_ERR(ctx, "Failed to create the D3D11 hwdec interop context.\n");
+    if (ra_ctx->spirv && ra_ctx->spirv->fns->uninit)
+        ra_ctx->spirv->fns->uninit(ra_ctx);
+    talloc_free(ra_ctx);
+}
+
+static void d3d11_destroy_ra(struct ra_ctx *ra_ctx)
+{
+    if (!ra_ctx)
+        return;
+
+    if (ra_ctx->ra) {
+        ra_ctx->ra->fns->destroy(ra_ctx->ra);
+        ra_ctx->ra = NULL;
+    }
+    if (ra_ctx->spirv && ra_ctx->spirv->fns->uninit)
+        ra_ctx->spirv->fns->uninit(ra_ctx);
+    talloc_free(ra_ctx);
+}
+
+static int d3d11_init(struct libmpv_gpu_next_context *ctx, mpv_render_param *params)
+{
+    struct priv_d3d11 *p = talloc_zero(ctx, struct priv_d3d11);
+    // destroy() runs even after a failed init(), so publish priv early.
+    ctx->priv = p;
+
+    mpv_d3d11_init_params *init =
+        get_mpv_render_param(params, MPV_RENDER_PARAM_D3D11_INIT_PARAMS, NULL);
+    if (!init || !init->device)
+        return MPV_ERROR_INVALID_PARAMETER;
+
+    p->pl_log = mppl_log_create(ctx, ctx->log);
+    if (!p->pl_log)
+        return MPV_ERROR_VO_INIT_FAILED;
+    mppl_log_set_probing(p->pl_log, false);
+
+    p->d3d11 = pl_d3d11_create(p->pl_log, pl_d3d11_params(.device = init->device));
+    if (!p->d3d11)
+        return MPV_ERROR_UNSUPPORTED;
+
+    ctx->pl_log = p->pl_log;
+    ctx->gpu = p->d3d11->gpu;
+    ctx->rr = pl_renderer_create(ctx->pl_log, ctx->gpu);
+    if (!ctx->rr)
+        return MPV_ERROR_VO_INIT_FAILED;
+
+    d3d11_create_ra(ctx, init->device);
+    return 0;
+}
+
+static int d3d11_wrap_fbo(struct libmpv_gpu_next_context *ctx,
+                          mpv_render_param *params, pl_tex *out_tex)
+{
+    struct priv_d3d11 *p = ctx->priv;
+
+    mpv_d3d11_fbo *fbo =
+        get_mpv_render_param(params, MPV_RENDER_PARAM_D3D11_FBO, NULL);
+    if (!fbo || !fbo->tex)
+        return MPV_ERROR_INVALID_PARAMETER;
+
+    // mpv_d3d11_fbo carries no dimensions, so query them from the texture.
+    ID3D11Texture2D *tex = (ID3D11Texture2D *)fbo->tex;
+    D3D11_TEXTURE2D_DESC desc = {0};
+    ID3D11Texture2D_GetDesc(tex, &desc);
+    if (!desc.Width || !desc.Height)
+        return MPV_ERROR_INVALID_PARAMETER;
+
+    if (!p->target || p->target_tex != tex ||
+        p->target_w != (int)desc.Width || p->target_h != (int)desc.Height)
+    {
+        pl_tex_destroy(ctx->gpu, &p->target);
+        p->target = pl_d3d11_wrap(ctx->gpu, pl_d3d11_wrap_params(
+            .tex = (ID3D11Resource *)tex,
+            .w = desc.Width,
+            .h = desc.Height,
+        ));
+        if (!p->target) {
+            MP_ERR(ctx, "Failed to wrap the provided D3D11 texture.\n");
+            return MPV_ERROR_GENERIC;
+        }
+        p->target_tex = tex;
+        p->target_w = desc.Width;
+        p->target_h = desc.Height;
+    }
+    *out_tex = p->target;
+    return 0;
+}
+
+static void d3d11_done_frame(struct libmpv_gpu_next_context *ctx)
+{
+    pl_gpu_flush(ctx->gpu);
+}
+
+static void d3d11_destroy(struct libmpv_gpu_next_context *ctx)
+{
+    struct priv_d3d11 *p = ctx->priv;
+    if (!p)
+        return;
+
+    if (ctx->gpu) {
+        pl_gpu_flush(ctx->gpu);
+        pl_tex_destroy(ctx->gpu, &p->target);
+    }
+    pl_renderer_destroy(&ctx->rr);
+    d3d11_destroy_ra(ctx->ra_ctx);
+    ctx->ra_ctx = NULL;
+    pl_d3d11_destroy(&p->d3d11);
+    pl_log_destroy(&p->pl_log);
+}
+
+const struct libmpv_gpu_next_context_fns libmpv_gpu_next_context_d3d11 = {
+    .api_name = MPV_RENDER_API_TYPE_D3D11,
+    .init = d3d11_init,
+    .wrap_fbo = d3d11_wrap_fbo,
+    .done_frame = d3d11_done_frame,
+    .destroy = d3d11_destroy,
+};
+
+#endif // HAVE_D3D11 && defined(PL_HAVE_D3D11)
