@@ -29,16 +29,20 @@
 #include "config.h"
 #include "common/common.h"
 #include "options/m_config.h"
+#include "video/out/gpu_next/libmpv_gpu_next.h"
+#include "video/out/libmpv.h"
 #include "video/out/placebo/utils.h"
 #include "video/out/gpu/video.h"
 
 #if HAVE_D3D11
+#include "mpv/render_d3d11.h"
 #include "osdep/windows_utils.h"
 #include "video/out/d3d11/ra_d3d11.h"
 #include "video/out/d3d11/context.h"
 #endif
 
 #if HAVE_GL
+#include "mpv/render_gl.h"
 #include "video/out/opengl/context.h"
 #include "video/out/opengl/ra_gl.h"
 # if HAVE_EGL
@@ -235,3 +239,239 @@ skip_common_pl_cleanup:
     talloc_free(ctx);
     *ctxp = NULL;
 }
+
+#if HAVE_GL && defined(PL_HAVE_OPENGL)
+
+struct priv {
+    pl_log pl_log;
+    pl_opengl gl;
+    pl_gpu gpu;
+    pl_tex wrapped_tex;
+    mpv_opengl_init_params gl_params;
+};
+
+static bool pl_callback_makecurrent_gl(void *priv)
+{
+    mpv_opengl_init_params *gl_params = priv;
+    if (gl_params && gl_params->get_proc_address) {
+        gl_params->get_proc_address(gl_params->get_proc_address_ctx, "glGetString");
+        return true;
+    }
+    return false;
+}
+
+static void pl_callback_releasecurrent_gl(void *priv)
+{
+}
+
+static void pl_log_cb(void *log_priv, enum pl_log_level level, const char *msg)
+{
+    struct mp_log *log = log_priv;
+    mp_msg(log, MSGL_WARN, "[gpu-next:pl] %s\n", msg);
+}
+
+static int gl_init(struct libmpv_gpu_next_context *ctx, mpv_render_param *params)
+{
+    struct priv *p = ctx->priv = talloc_zero(ctx, struct priv);
+
+    mpv_opengl_init_params *gl_params =
+    get_mpv_render_param(params, MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, NULL);
+    if (!gl_params || !gl_params->get_proc_address)
+        return MPV_ERROR_INVALID_PARAMETER;
+
+    p->gl_params = *gl_params;
+
+    struct pl_log_params log_params = {
+        .log_level = PL_LOG_DEBUG
+    };
+
+    if (mp_msg_test(ctx->log, MSGL_TRACE)) {
+        log_params.log_cb = pl_log_cb;
+        log_params.log_priv = ctx->log;
+    }
+
+    p->pl_log = pl_log_create(PL_API_VER, &log_params);
+    p->gl = pl_opengl_create(p->pl_log, pl_opengl_params(
+        .get_proc_addr_ex = (pl_voidfunc_t (*)(void*, const char*))gl_params->get_proc_address,
+        .proc_ctx = gl_params->get_proc_address_ctx,
+        .make_current = pl_callback_makecurrent_gl,
+        .release_current = pl_callback_releasecurrent_gl,
+        .priv = &p->gl_params
+    ));
+
+    if (!p->gl) {
+        MP_ERR(ctx, "Failed to create libplacebo OpenGL context.\n");
+        pl_log_destroy(&p->pl_log);
+        return MPV_ERROR_UNSUPPORTED;
+    }
+    p->gpu = p->gl->gpu;
+    ctx->pl_log = p->pl_log;
+    ctx->gpu = p->gpu;
+    ctx->renderer = pl_renderer_create(p->pl_log, p->gpu);
+    if (!ctx->renderer) {
+        pl_opengl_destroy(&p->gl);
+        pl_log_destroy(&p->pl_log);
+        return MPV_ERROR_VO_INIT_FAILED;
+    }
+
+    return 0;
+}
+
+static int gl_wrap_fbo(struct libmpv_gpu_next_context *ctx,
+                       mpv_render_param *params, pl_tex *out_tex)
+{
+    struct priv *p = ctx->priv;
+
+    mpv_opengl_fbo *fbo =
+        get_mpv_render_param(params, MPV_RENDER_PARAM_OPENGL_FBO, NULL);
+    if (!fbo)
+        return MPV_ERROR_INVALID_PARAMETER;
+
+    p->wrapped_tex = pl_opengl_wrap(p->gpu, pl_opengl_wrap_params(
+        .framebuffer = fbo->fbo,
+        .width = fbo->w,
+        .height = fbo->h,
+        .iformat = fbo->internal_format
+    ));
+
+    if (!p->wrapped_tex) {
+        MP_ERR(ctx, "Failed to wrap provided FBO as a libplacebo texture.\n");
+        return MPV_ERROR_GENERIC;
+    }
+
+    *out_tex = p->wrapped_tex;
+    return 0;
+}
+
+static void gl_done_frame(struct libmpv_gpu_next_context *ctx)
+{
+    struct priv *p = ctx->priv;
+    pl_tex_destroy(p->gpu, &p->wrapped_tex);
+}
+
+static void gl_destroy(struct libmpv_gpu_next_context *ctx)
+{
+    struct priv *p = ctx->priv;
+    if (!p)
+        return;
+
+    pl_renderer_destroy(&ctx->renderer);
+    pl_tex_destroy(p->gpu, &p->wrapped_tex);
+    pl_opengl_destroy(&p->gl);
+    pl_log_destroy(&p->pl_log);
+}
+
+const struct libmpv_gpu_next_context_fns libmpv_gpu_next_context_gl = {
+    .api_name = MPV_RENDER_API_TYPE_OPENGL,
+    .init = gl_init,
+    .wrap_fbo = gl_wrap_fbo,
+    .done_frame = gl_done_frame,
+    .destroy = gl_destroy,
+};
+#endif
+
+#if HAVE_D3D11 && defined(PL_HAVE_D3D11)
+
+struct priv_d3d11 {
+    pl_log pl_log;
+    pl_d3d11 d3d11;
+    pl_gpu gpu;
+    pl_tex wrapped_tex;
+    ID3D11Resource *wrapped_res;
+};
+
+static int d3d11_init(struct libmpv_gpu_next_context *ctx, mpv_render_param *params)
+{
+    struct priv_d3d11 *p = ctx->priv = talloc_zero(ctx, struct priv_d3d11);
+
+    mpv_d3d11_init_params *d3d11_params =
+        get_mpv_render_param(params, MPV_RENDER_PARAM_D3D11_INIT_PARAMS, NULL);
+    if (!d3d11_params || !d3d11_params->device)
+        return MPV_ERROR_INVALID_PARAMETER;
+
+    struct pl_log_params log_params = {
+        .log_level = PL_LOG_DEBUG
+    };
+    p->pl_log = pl_log_create(PL_API_VER, &log_params);
+
+    p->d3d11 = pl_d3d11_create(p->pl_log, pl_d3d11_params(
+        .device = d3d11_params->device
+    ));
+    if (!p->d3d11) {
+        MP_ERR(ctx, "Failed to create libplacebo D3D11 context.\n");
+        pl_log_destroy(&p->pl_log);
+        return MPV_ERROR_UNSUPPORTED;
+    }
+    p->gpu = p->d3d11->gpu;
+    ctx->pl_log = p->pl_log;
+    ctx->gpu = p->gpu;
+    ctx->renderer = pl_renderer_create(p->pl_log, p->gpu);
+    if (!ctx->renderer) {
+        pl_d3d11_destroy(&p->d3d11);
+        pl_log_destroy(&p->pl_log);
+        return MPV_ERROR_VO_INIT_FAILED;
+    }
+
+    return 0;
+}
+
+static int d3d11_wrap_fbo(struct libmpv_gpu_next_context *ctx,
+                          mpv_render_param *params, pl_tex *out_tex)
+{
+    struct priv_d3d11 *p = ctx->priv;
+
+    mpv_d3d11_fbo *fbo =
+        get_mpv_render_param(params, MPV_RENDER_PARAM_D3D11_FBO, NULL);
+    if (!fbo || !fbo->tex)
+        return MPV_ERROR_INVALID_PARAMETER;
+
+    // Cache the wrapper across frames; swap chain back buffers are recycled, so
+    // re-wrapping the same resource every frame is wasteful.
+    if (p->wrapped_res != (ID3D11Resource *)fbo->tex) {
+        pl_tex_destroy(p->gpu, &p->wrapped_tex);
+        p->wrapped_res = (ID3D11Resource *)fbo->tex;
+        p->wrapped_tex = pl_d3d11_wrap(p->gpu, pl_d3d11_wrap_params(
+            .tex = fbo->tex,
+            .w = fbo->w,
+            .h = fbo->h
+        ));
+        if (!p->wrapped_tex) {
+            p->wrapped_res = NULL;
+            MP_ERR(ctx, "Failed to wrap D3D11 texture as a libplacebo texture.\n");
+            return MPV_ERROR_GENERIC;
+        }
+    }
+
+    *out_tex = p->wrapped_tex;
+    return 0;
+}
+
+static void d3d11_done_frame(struct libmpv_gpu_next_context *ctx)
+{
+    struct priv_d3d11 *p = ctx->priv;
+    pl_gpu_flush(p->gpu);
+    // Release the wrapper so the swapchain is free to resize.
+    pl_tex_destroy(p->gpu, &p->wrapped_tex);
+    p->wrapped_res = NULL;
+}
+
+static void d3d11_destroy(struct libmpv_gpu_next_context *ctx)
+{
+    struct priv_d3d11 *p = ctx->priv;
+    if (!p)
+        return;
+
+    pl_tex_destroy(p->gpu, &p->wrapped_tex);
+    pl_renderer_destroy(&ctx->renderer);
+    pl_d3d11_destroy(&p->d3d11);
+    pl_log_destroy(&p->pl_log);
+}
+
+const struct libmpv_gpu_next_context_fns libmpv_gpu_next_context_d3d11 = {
+    .api_name = MPV_RENDER_API_TYPE_D3D11,
+    .init = d3d11_init,
+    .wrap_fbo = d3d11_wrap_fbo,
+    .done_frame = d3d11_done_frame,
+    .destroy = d3d11_destroy,
+};
+#endif

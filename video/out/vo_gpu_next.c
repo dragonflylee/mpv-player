@@ -48,6 +48,7 @@
 #include "gpu/video_shaders.h"
 #include "sub/osd.h"
 #include "gpu_next/context.h"
+#include "gpu_next/vo_gpu_next.h"
 
 #if HAVE_GL && defined(PL_HAVE_OPENGL)
 #include <libplacebo/opengl.h>
@@ -79,13 +80,6 @@ struct scaler_params {
 struct user_hook {
     char *path;
     const struct pl_hook *hook;
-};
-
-struct user_lut {
-    char *opt;
-    char *path;
-    int type;
-    struct pl_custom_lut *lut;
 };
 
 struct frame_info {
@@ -162,23 +156,6 @@ struct priv {
 
 static void update_render_options(struct vo *vo);
 static void update_lut(struct priv *p, struct user_lut *lut);
-
-struct gl_next_opts {
-    bool delayed_peak;
-    int sub_hdr_peak;
-    int image_subs_hdr_peak;
-    int border_background;
-    float background_blur_radius;
-    float corner_rounding;
-    bool inter_preserve;
-    struct user_lut lut;
-    struct user_lut image_lut;
-    struct user_lut target_lut;
-    int target_hint;
-    int target_hint_mode;
-    bool target_hint_strict;
-    char **raw_opts;
-};
 
 const struct m_opt_choice_alternatives lut_types[] = {
     {"auto",        PL_LUT_UNKNOWN},
@@ -425,7 +402,7 @@ struct frame_priv {
     struct ra_hwdec *hwdec;
 };
 
-static int plane_data_from_imgfmt(struct pl_plane_data out_data[4],
+int plane_data_from_imgfmt(struct pl_plane_data out_data[4],
                                   struct pl_bit_encoding *out_bits,
                                   enum mp_imgfmt imgfmt, bool use_uint)
 {

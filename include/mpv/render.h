@@ -434,6 +434,14 @@ typedef enum mpv_render_param_type {
      * Type: mpv_d3d11_fbo*
      */
     MPV_RENDER_PARAM_D3D11_FBO = 22,
+    /**
+     * The name of the render backend to use. Valid for mpv_render_context_create().
+     * Type: char*
+     * Defined backends:
+     *   "gpu" (default)
+     *   "gpu-next"
+     */
+    MPV_RENDER_PARAM_BACKEND = 23,
 } mpv_render_param_type;
 
 /**
