@@ -3,8 +3,11 @@
 #include "libmpv_gpu_next.h"
 #include "mpv/client.h"
 #include "mpv/render.h"
+#include "options/m_config.h"
 #include "ta/ta_talloc.h"
 #include "video/hwdec.h"
+#include "video/out/gpu/hwdec.h"
+#include "video/out/gpu/video.h"
 #include "video/out/libmpv.h"
 #include "video/out/vo.h"
 #include "video.h"
@@ -12,6 +15,7 @@
 struct priv {
     struct libmpv_gpu_next_context *context; // Manages the API (e.g., GL, D3D11)
     struct pl_video *video_engine;           // Manages synchronous libplacebo rendering
+    struct m_config_cache *gl_opts_cache;    // for hwdec_interop
 };
 
 static const struct libmpv_gpu_next_context_fns *context_backends[] = {
@@ -23,6 +27,14 @@ static const struct libmpv_gpu_next_context_fns *context_backends[] = {
 #endif
     NULL
 };
+
+static void load_hwdec_api(void *ctx, struct hwdec_imgfmt_request *params)
+{
+    struct render_backend *rb = ctx;
+    struct priv *p = rb->priv;
+
+    pl_video_load_hwdecs(p->video_engine, params);
+}
 
 static int init(struct render_backend *ctx, mpv_render_param *params)
 {
@@ -63,7 +75,8 @@ static int init(struct render_backend *ctx, mpv_render_param *params)
 
     // Initialize our synchronous libplacebo rendering engine.
     p->video_engine = pl_video_init(ctx->global, ctx->log,
-                                    p->context->gpu, p->context->renderer);
+                                    p->context->pl_log, p->context->gpu,
+                                    p->context->renderer);
     if (!p->video_engine) {
         p->context->fns->destroy(p->context);
         talloc_free(p->context);
@@ -71,14 +84,27 @@ static int init(struct render_backend *ctx, mpv_render_param *params)
     }
 
     ctx->hwdec_devs = hwdec_devices_create();
+    if (p->context->ra_ctx) {
+        // The backend can provide a ra_ctx, which we use to set up the hwdec
+        // interop and expose it to the decoder via ctx->hwdec_devs. The
+        // interop selection mirrors vo_gpu_next's "hwdec-interop" option.
+        struct gl_video_opts *gl_opts =
+            (p->gl_opts_cache = m_config_cache_alloc(p, ctx->global,
+                                                     &gl_video_conf))->opts;
+        hwdec_devices_set_loader(ctx->hwdec_devs, load_hwdec_api, ctx);
+        pl_video_init_hwdecs(p->video_engine, p->context->ra_ctx,
+                             ctx->hwdec_devs, gl_opts->hwdec_interop);
+    }
+
     ctx->driver_caps = VO_CAP_ROTATE90 | VO_CAP_VFLIP;
     return 0;
 }
 
 static bool check_format(struct render_backend *ctx, int imgfmt)
 {
-    // libplacebo handles the conversion; accept any format it can upload.
-    return true;
+    struct priv *p = ctx->priv;
+
+    return pl_video_check_format(p->video_engine, imgfmt);
 }
 
 static int set_parameter(struct render_backend *ctx, mpv_render_param param)
@@ -117,7 +143,7 @@ static void resize(struct render_backend *ctx, struct mp_rect *src,
     struct priv *p = ctx->priv;
 
     if (p->video_engine)
-        pl_video_resize(p->video_engine, dst, osd);
+        pl_video_resize(p->video_engine, src, dst, osd);
 }
 
 static int get_target_size(struct render_backend *ctx, mpv_render_param *params,
@@ -157,9 +183,9 @@ static int render(struct render_backend *ctx, mpv_render_param *params,
 static struct mp_image *get_image(struct render_backend *ctx, int imgfmt,
                                   int w, int h, int stride_align, int flags)
 {
-    // No zero-copy direct rendering support; the core falls back to normal
-    // frames provided through vo_frame.
-    return NULL;
+    struct priv *p = ctx->priv;
+
+    return pl_video_get_image(p->video_engine, imgfmt, w, h, stride_align, flags);
 }
 
 static void screenshot(struct render_backend *ctx, struct vo_frame *frame,
@@ -185,8 +211,13 @@ static void destroy(struct render_backend *ctx)
     struct priv *p = ctx->priv;
     if (!p) return;
 
-    hwdec_devices_destroy(ctx->hwdec_devs);
+    // Uninit the engine (and with it the hwdec interop) before the device
+    // list, since the interop unregisters itself from it.
     pl_video_uninit(&p->video_engine);
+    if (ctx->hwdec_devs) {
+        hwdec_devices_set_loader(ctx->hwdec_devs, NULL, NULL);
+        hwdec_devices_destroy(ctx->hwdec_devs);
+    }
     if (p->context) {
         p->context->fns->destroy(p->context);
         talloc_free(p->context);

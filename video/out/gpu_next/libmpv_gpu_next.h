@@ -18,6 +18,10 @@ struct libmpv_gpu_next_context {
     pl_log pl_log;
     pl_gpu gpu;
     pl_renderer renderer;
+
+    // Set by init() if the backend provides one. Used only as the anchor for
+    // the hwdec interop (ra_ctx->ra), it is not used for output.
+    struct ra_ctx *ra_ctx;
 };
 
 struct libmpv_gpu_next_context_fns {

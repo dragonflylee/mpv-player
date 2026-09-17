@@ -240,6 +240,13 @@ skip_common_pl_cleanup:
     *ctxp = NULL;
 }
 
+// Shared libplacebo log callback, used by both the GL and D3D11 backends.
+static void pl_log_cb(void *log_priv, enum pl_log_level level, const char *msg)
+{
+    struct mp_log *log = log_priv;
+    mp_msg(log, MSGL_WARN, "[gpu-next:pl] %s\n", msg);
+}
+
 #if HAVE_GL && defined(PL_HAVE_OPENGL)
 
 struct priv {
@@ -247,6 +254,9 @@ struct priv {
     pl_opengl gl;
     pl_gpu gpu;
     pl_tex wrapped_tex;
+    int wrapped_fbo;
+    int wrapped_w, wrapped_h;
+    int wrapped_iformat;
     mpv_opengl_init_params gl_params;
 };
 
@@ -254,20 +264,18 @@ static bool pl_callback_makecurrent_gl(void *priv)
 {
     mpv_opengl_init_params *gl_params = priv;
     if (gl_params && gl_params->get_proc_address) {
-        gl_params->get_proc_address(gl_params->get_proc_address_ctx, "glGetString");
-        return true;
+        // The symbol lookup is a cheap way to verify that the client's
+        // context is really current; report failure instead of letting
+        // libplacebo run into a deeper error later.
+        void *sym = gl_params->get_proc_address(gl_params->get_proc_address_ctx,
+                                                "glGetString");
+        return sym != NULL;
     }
     return false;
 }
 
 static void pl_callback_releasecurrent_gl(void *priv)
 {
-}
-
-static void pl_log_cb(void *log_priv, enum pl_log_level level, const char *msg)
-{
-    struct mp_log *log = log_priv;
-    mp_msg(log, MSGL_WARN, "[gpu-next:pl] %s\n", msg);
 }
 
 static int gl_init(struct libmpv_gpu_next_context *ctx, mpv_render_param *params)
@@ -327,16 +335,29 @@ static int gl_wrap_fbo(struct libmpv_gpu_next_context *ctx,
     if (!fbo)
         return MPV_ERROR_INVALID_PARAMETER;
 
-    p->wrapped_tex = pl_opengl_wrap(p->gpu, pl_opengl_wrap_params(
-        .framebuffer = fbo->fbo,
-        .width = fbo->w,
-        .height = fbo->h,
-        .iformat = fbo->internal_format
-    ));
-
-    if (!p->wrapped_tex) {
-        MP_ERR(ctx, "Failed to wrap provided FBO as a libplacebo texture.\n");
-        return MPV_ERROR_GENERIC;
+    // pl_opengl_wrap() allocates a fresh pl_tex each time, so cache the wrapper
+    // and only recreate it when the FBO or its dimensions actually change.
+    int iformat = fbo->internal_format;
+    if (!p->wrapped_tex || p->wrapped_fbo != fbo->fbo ||
+        p->wrapped_w != fbo->w || p->wrapped_h != fbo->h ||
+        p->wrapped_iformat != iformat)
+    {
+        pl_tex_destroy(p->gpu, &p->wrapped_tex);
+        p->wrapped_tex = pl_opengl_wrap(p->gpu, pl_opengl_wrap_params(
+            .framebuffer = fbo->fbo,
+            .width = fbo->w,
+            .height = fbo->h,
+            .iformat = iformat
+        ));
+        if (!p->wrapped_tex) {
+            p->wrapped_fbo = 0;
+            MP_ERR(ctx, "Failed to wrap provided FBO as a libplacebo texture.\n");
+            return MPV_ERROR_GENERIC;
+        }
+        p->wrapped_fbo = fbo->fbo;
+        p->wrapped_w = fbo->w;
+        p->wrapped_h = fbo->h;
+        p->wrapped_iformat = iformat;
     }
 
     *out_tex = p->wrapped_tex;
@@ -345,8 +366,7 @@ static int gl_wrap_fbo(struct libmpv_gpu_next_context *ctx,
 
 static void gl_done_frame(struct libmpv_gpu_next_context *ctx)
 {
-    struct priv *p = ctx->priv;
-    pl_tex_destroy(p->gpu, &p->wrapped_tex);
+    // The wrapper is kept alive across frames and recycled by gl_wrap_fbo().
 }
 
 static void gl_destroy(struct libmpv_gpu_next_context *ctx)
@@ -355,8 +375,8 @@ static void gl_destroy(struct libmpv_gpu_next_context *ctx)
     if (!p)
         return;
 
-    pl_renderer_destroy(&ctx->renderer);
     pl_tex_destroy(p->gpu, &p->wrapped_tex);
+    pl_renderer_destroy(&ctx->renderer);
     pl_opengl_destroy(&p->gl);
     pl_log_destroy(&p->pl_log);
 }
@@ -378,7 +398,25 @@ struct priv_d3d11 {
     pl_gpu gpu;
     pl_tex wrapped_tex;
     ID3D11Resource *wrapped_res;
+    int wrapped_w, wrapped_h;
 };
+
+// Tear down the auxiliary ra_ctx set up for the hwdec interop. This must not
+// go through ra_ctx_destroy(), since it has no ra_ctx_fns of its own.
+static void d3d11_destroy_ra(struct ra_ctx *ra_ctx)
+{
+    if (!ra_ctx)
+        return;
+
+    if (ra_ctx->ra) {
+        // ra_d3d11 frees its own struct from inside its destroy callback.
+        ra_ctx->ra->fns->destroy(ra_ctx->ra);
+        ra_ctx->ra = NULL;
+    }
+    if (ra_ctx->spirv && ra_ctx->spirv->fns->uninit)
+        ra_ctx->spirv->fns->uninit(ra_ctx);
+    talloc_free(ra_ctx);
+}
 
 static int d3d11_init(struct libmpv_gpu_next_context *ctx, mpv_render_param *params)
 {
@@ -392,6 +430,12 @@ static int d3d11_init(struct libmpv_gpu_next_context *ctx, mpv_render_param *par
     struct pl_log_params log_params = {
         .log_level = PL_LOG_DEBUG
     };
+
+    if (mp_msg_test(ctx->log, MSGL_TRACE)) {
+        log_params.log_cb = pl_log_cb;
+        log_params.log_priv = ctx->log;
+    }
+
     p->pl_log = pl_log_create(PL_API_VER, &log_params);
 
     p->d3d11 = pl_d3d11_create(p->pl_log, pl_d3d11_params(
@@ -412,7 +456,31 @@ static int d3d11_init(struct libmpv_gpu_next_context *ctx, mpv_render_param *par
         return MPV_ERROR_VO_INIT_FAILED;
     }
 
+    // The hwdec interop is managed through mpv's ra abstraction, which needs a
+    // ra_ctx to attach to. It is only used to map hwdec frames, never to
+    // present, so it just wraps the device passed by the API user.
+    struct ra_ctx *ra_ctx = talloc_zero(p, struct ra_ctx);
+    ra_ctx->log = ctx->log;
+    ra_ctx->global = ctx->global;
+    if (!spirv_compiler_init(ra_ctx)) {
+        MP_ERR(ctx, "Failed to initialize the SPIR-V compiler.\n");
+        goto hwdec_err;
+    }
+    ra_ctx->ra = ra_d3d11_create(d3d11_params->device, ctx->log, ra_ctx->spirv);
+    if (!ra_ctx->ra) {
+        MP_ERR(ctx, "Failed to create a D3D11 RA context.\n");
+        goto hwdec_err;
+    }
+    ctx->ra_ctx = ra_ctx;
+
     return 0;
+
+hwdec_err:
+    d3d11_destroy_ra(ra_ctx);
+    pl_renderer_destroy(&ctx->renderer);
+    pl_d3d11_destroy(&p->d3d11);
+    pl_log_destroy(&p->pl_log);
+    return MPV_ERROR_VO_INIT_FAILED;
 }
 
 static int d3d11_wrap_fbo(struct libmpv_gpu_next_context *ctx,
@@ -425,11 +493,16 @@ static int d3d11_wrap_fbo(struct libmpv_gpu_next_context *ctx,
     if (!fbo || !fbo->tex)
         return MPV_ERROR_INVALID_PARAMETER;
 
-    // Cache the wrapper across frames; swap chain back buffers are recycled, so
-    // re-wrapping the same resource every frame is wasteful.
-    if (p->wrapped_res != (ID3D11Resource *)fbo->tex) {
+    // Swap chain back buffers are recycled, so reuse the wrapper. The resource
+    // pointer alone is not a sufficient key: a resize may reuse the same
+    // texture object with new dimensions, leaving stale pl_tex params.
+    if (p->wrapped_res != (ID3D11Resource *)fbo->tex ||
+        p->wrapped_w != fbo->w || p->wrapped_h != fbo->h)
+    {
         pl_tex_destroy(p->gpu, &p->wrapped_tex);
         p->wrapped_res = (ID3D11Resource *)fbo->tex;
+        p->wrapped_w = fbo->w;
+        p->wrapped_h = fbo->h;
         p->wrapped_tex = pl_d3d11_wrap(p->gpu, pl_d3d11_wrap_params(
             .tex = fbo->tex,
             .w = fbo->w,
@@ -448,11 +521,11 @@ static int d3d11_wrap_fbo(struct libmpv_gpu_next_context *ctx,
 
 static void d3d11_done_frame(struct libmpv_gpu_next_context *ctx)
 {
-    struct priv_d3d11 *p = ctx->priv;
-    pl_gpu_flush(p->gpu);
-    // Release the wrapper so the swapchain is free to resize.
-    pl_tex_destroy(p->gpu, &p->wrapped_tex);
-    p->wrapped_res = NULL;
+    // Submit the queued GPU work for this frame. ID3D11DeviceContext::Flush()
+    // does not wait for completion, so this stays asynchronous; skipping it
+    // makes Present() flush serially and destroys frame pacing. Mirrors
+    // vo_gpu_next and the 'gpu' backend's ra_d3d11_flush().
+    pl_gpu_flush(ctx->gpu);
 }
 
 static void d3d11_destroy(struct libmpv_gpu_next_context *ctx)
@@ -462,7 +535,10 @@ static void d3d11_destroy(struct libmpv_gpu_next_context *ctx)
         return;
 
     pl_tex_destroy(p->gpu, &p->wrapped_tex);
+    p->wrapped_res = NULL;
     pl_renderer_destroy(&ctx->renderer);
+    d3d11_destroy_ra(ctx->ra_ctx);
+    ctx->ra_ctx = NULL;
     pl_d3d11_destroy(&p->d3d11);
     pl_log_destroy(&p->pl_log);
 }
