@@ -18,6 +18,8 @@
 #include "options/m_config.h"
 #include "video/out/placebo/ra_pl.h"
 
+#include <libavutil/avutil.h>
+
 #include "context.h"
 #include "utils.h"
 
@@ -179,6 +181,10 @@ bool ra_vk_ctx_init(struct ra_ctx *ctx, struct mpvk_ctx *vk,
         VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
         // This is a literal string as it's not in the official headers yet.
         "VK_MESA_video_decode_av1",
+#if defined(VK_KHR_internally_synchronized_queues) && PL_API_VER >= 365 && \
+    LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(60, 32, 100)
+        VK_KHR_INTERNALLY_SYNCHRONIZED_QUEUES_EXTENSION_NAME,
+#endif
     };
 
     VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_feature = {
@@ -196,6 +202,24 @@ bool ra_vk_ctx_init(struct ra_ctx *ctx, struct mpvk_ctx *vk,
     };
 
     features.pNext = &atomic_float_feature;
+#endif
+
+#if HAVE_VULKAN_INTEROP && defined(VK_KHR_internally_synchronized_queues) && \
+    PL_API_VER >= 365 && LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(60, 32, 100)
+    /*
+     * libplacebo creates every queue with
+     * VK_DEVICE_QUEUE_CREATE_INTERNALLY_SYNCHRONIZED_BIT_KHR when this is
+     * requested, and hwdec_vulkan passes the flag on through
+     * AVVulkanDeviceContext.queue_flags. Older lavu retrieves queues with
+     * flags 0 and gets VK_NULL_HANDLE, so only request it from lavu that
+     * knows the flags, and from libplacebo that will use it too.
+     */
+    VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR synchronized_queues_feature = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INTERNALLY_SYNCHRONIZED_QUEUES_FEATURES_KHR,
+        .pNext = features.pNext,
+        .internallySynchronizedQueues = true,
+    };
+    features.pNext = &synchronized_queues_feature;
 #endif
 
     assert(vk->pllog);
