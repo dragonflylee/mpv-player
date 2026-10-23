@@ -1,16 +1,18 @@
 #include <libavutil/sha.h>
 #include <libavutil/mem.h>
+#include <stdio.h>
+#include <string.h>
 #include "ra_ps4.h"
 
 // enable / disable precompiled shaders
 int ps4_mpv_use_precompiled_shaders = 0;
 int ps4_mpv_dump_shaders = 0;
 
-int ps4_shaders_list_size = 5;
-ps4_shader ps4_shaders_list[5] = {
+int ps4_shaders_list_size = 6;
+ps4_shader ps4_shaders_list[6] = {
     {ps4_vert_default_sha, ps4_vert_default, 1295},
     {ps4_frag_default_sha, ps4_frag_default, 2358},
-	{ps4_frag_default_gamma_sha, ps4_frag_default_gamma, 2598},
+    {ps4_frag_default_gamma_sha, ps4_frag_default_gamma, 2598},
     {ps4_vert_sub_sha, ps4_vert_sub, 1092},
     {ps4_frag_sub_sha, ps4_frag_sub, 1110},
     {ps4_frag_59EAFD_sha, ps4_frag_59EAFD, 7277}
@@ -45,7 +47,7 @@ ps4_shader *ps4_mpv_get_shader(const char *sha) {
 void ps4_mpv_dump_shader(GLuint id, const char *path, const char *name) {
     GLenum format = 0;
     int size, need_comma = 0;
-    char *buf = (char *) malloc(0x5000);
+    char *buf = (char *)av_malloc(0x5000);
     char dump_path[256];
 
     // dump shader
@@ -75,7 +77,7 @@ void ps4_mpv_dump_shader(GLuint id, const char *path, const char *name) {
         sceKernelDebugOutText(0, "ps4_mpv_dump_shader: glPigletGetShaderBinarySCE failed\n");
     }
 
-    free(buf);
+    av_free(buf);
 }
 
 // precompiled shaders
