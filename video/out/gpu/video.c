@@ -2917,21 +2917,23 @@ static void pass_draw_osd(struct gl_video *p, int osd_flags, int frame_flags,
 
     timer_pool_start(p->osd_timer);
     for (int n = 0; n < MAX_OSD_PARTS; n++) {
-        // (This returns false if this part is empty with nothing to draw.)
-        if (!mpgl_osd_draw_prepare(p->osd, n, p->sc))
-            continue;
-        // When subtitles need to be color managed, assume they're in sRGB
-        // (for lack of anything saner to do)
-        if (cms) {
-            static const struct mp_colorspace csp_srgb = {
-                .primaries = MP_CSP_PRIM_BT_709,
-                .gamma = MP_CSP_TRC_SRGB,
-                .light = MP_CSP_LIGHT_DISPLAY,
-            };
+        for (int pass = 0; pass < mpgl_osd_draw_passes(p->osd, n); pass++) {
+            // (This returns false if this part is empty with nothing to draw.)
+            if (!mpgl_osd_draw_prepare(p->osd, n, pass, p->sc))
+                continue;
+            // When subtitles need to be color managed, assume they're in sRGB
+            // (for lack of anything saner to do)
+            if (cms) {
+                static const struct mp_colorspace csp_srgb = {
+                    .primaries = MP_CSP_PRIM_BT_709,
+                    .gamma = MP_CSP_TRC_SRGB,
+                    .light = MP_CSP_LIGHT_DISPLAY,
+                };
 
-            pass_colormanage(p, csp_srgb, fbo.color_space, true);
+                pass_colormanage(p, csp_srgb, fbo.color_space, true);
+            }
+            mpgl_osd_draw_finish(p->osd, n, p->sc, fbo);
         }
-        mpgl_osd_draw_finish(p->osd, n, p->sc, fbo);
     }
 
     timer_pool_stop(p->osd_timer);
