@@ -313,7 +313,8 @@ if host_machine.system() == 'cygwin'
 endif
 
 if psvita
-    dependencies += cc.find_library('SceAudio_stub')
+    dependencies += [cc.find_library('SceAudio_stub'),
+                     cc.find_library('SceAppUtil_stub')]
     link_flags += ['-Wl,-q', '-Wl,-z,nocopyreloc']
     features += {'vitashark': get_option('vitashark').allowed()}
     if (features['vitashark'])
@@ -326,7 +327,7 @@ if psvita
     sources += files('osdep/terminal-dummy.c',
                      'osdep/path-unix.c',
                      'osdep/timer-linux.c',
-                     'osdep/language-posix.c',
+                     'osdep/language-vita.c',
                      'audio/out/ao_vita.c',
                      'video/out/gxm/libmpv_gxm.c',
                      'video/out/gxm/ra_gxm.c',
