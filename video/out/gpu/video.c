@@ -3771,6 +3771,26 @@ static void check_gl_features(struct gl_video *p)
     bool have_ssbo = ra->caps & RA_CAP_BUF_RW;
     bool have_fragcoord = ra->caps & RA_CAP_FRAGCOORD;
 
+#ifdef __PS4__
+    // Piglet cannot compile GLSL at runtime, so every shader must be in the
+    // precompiled table. Options that change the generated shader (scaler,
+    // linear light, deband, dither, CMS) would produce uncached hashes; pin
+    // them to defaults. 4K -> display downscaling is the common case.
+    p->opts.scaler[SCALER_SCALE].kernel.name = "bilinear";
+    p->opts.scaler[SCALER_DSCALE] = gl_video_opts_def.scaler[SCALER_DSCALE];
+    p->opts.scaler[SCALER_CSCALE].kernel.name = "bilinear";
+    p->opts.linear_downscaling = false;
+    p->opts.linear_upscaling = false;
+    p->opts.sigmoid_upscaling = false;
+    p->opts.deband = false;
+    p->opts.dither_algo = DITHER_NONE;
+    p->opts.target_prim = MP_CSP_PRIM_AUTO;
+    p->opts.target_trc = MP_CSP_TRC_AUTO;
+    p->opts.tone_map.compute_peak = -1;
+    p->use_lut_3d = false;
+    MP_VERBOSE(p, "PS4: shader options restricted to the precompiled set.\n");
+#endif
+
     const char *auto_fbo_fmts[] = {"rgba16f", "rgba16hf", "rgba16",
                                    "rgb10_a2", "rgba8", 0};
     const char *user_fbo_fmts[] = {p->opts.fbo_format, 0};

@@ -767,7 +767,14 @@ static void compile_attach_shader(struct ra *ra, GLuint program,
             MP_VERBOSE(ra, "compile_attach_shader: precompiled shader found, using it\n");
             glShaderBinary(1, &shader, 0, (const void *) shader_bin->src, shader_bin->size);
         } else {
-            MP_VERBOSE(ra, "compile_attach_shader: precompiled shader not found\n");
+            // Piglet cannot compile GLSL at runtime; fail instead of drawing
+            // the blue error frame with no log clue.
+            MP_ERR(ra, "compile_attach_shader: no precompiled %s shader for "
+                   "sha %s; Piglet cannot compile GLSL at runtime\n",
+                   shader_typestr(type), hashstr);
+            gl->DeleteShader(shader);
+            *ok = false;
+            return;
         }
     } else {
         gl->ShaderSource(shader, 1, &source, NULL);
